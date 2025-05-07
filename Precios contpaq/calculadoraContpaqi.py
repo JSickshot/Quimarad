@@ -3,37 +3,53 @@ from tkinter import messagebox
 
 sistemas = {
     "Contabilidad": [
-        {"tipo": "Licencia nueva multi - RFC", "precio": 5190, "costo_adicional": 1490},
-        {"tipo": "Renovación multi - RFC", "precio": 4890, "costo_adicional": 1490},
-        {"tipo": "Licencia nueva mono - RFC", "precio": 3790, "costo_adicional": 1490},
-        {"tipo": "Renovación mono - RFC", "precio": 3690, "costo_adicional": 1490}
+        {"tipo": "Licencia nueva multi - RFC", "precio": 5590, "costo_adicional": 1590},
+        {"tipo": "Renovación multi - RFC", "precio": 5190, "costo_adicional": 1590},
+        {"tipo": "Licencia nueva mono - RFC", "precio": 4190, "costo_adicional": 1590},
+        {"tipo": "Renovación mono - RFC", "precio": 3990, "costo_adicional": 1590},
+        {"tipo": "Actualización ", "precio": 6990, "costo_adicional": 1590},
+        {"tipo": "Usuario adicional ", "precio": 2390 }
     ],
     "Nóminas": [
-        {"tipo": "Licencia nueva 1 RFC", "precio": 4890, "costo_adicional": 1490},
-        {"tipo": "Renovación 1 RFC", "precio": 4590, "costo_adicional": 1490},
-        {"tipo": "Licencia nueva multi RFC", "precio": 6490, "costo_adicional": 1590},
-        {"tipo": "Renovación multi RFC", "precio": 6090, "costo_adicional": 1590}
+        {"tipo": "Licencia nueva 1 RFC", "precio": 5190, "costo_adicional": 1590},
+        {"tipo": "Renovación 1 RFC", "precio": 4890, "costo_adicional": 1590},
+        {"tipo": "Licencia nueva multi RFC", "precio": 6990, "costo_adicional": 1690},
+        {"tipo": "Renovación multi RFC", "precio": 6490, "costo_adicional": 1690},
+        {"tipo": "Actualización", "precio": 8190, "costo_adicional": 1990},
+        {"tipo": "Usuario adicional", "precio": 2390} 
     ],
     "Bancos": [
-        {"tipo": "Licencia nueva", "precio": 4490, "costo_adicional": 1390},
-        {"tipo": "Renovación", "precio": 4190, "costo_adicional": 1390}
+        {"tipo": "Licencia nueva", "precio": 4890, "costo_adicional": 1490},
+        {"tipo": "Renovación", "precio": 4490, "costo_adicional": 1490},
     ],
     "Comercial Premium": [
-        {"tipo": "Licencia nueva multi - RFC", "precio": 8990, "costo_adicional": 2390},
-        {"tipo": "Renovación multi - RFC", "precio": 8690, "costo_adicional": 2390}
+        {"tipo": "Licencia nueva multi - RFC", "precio": 9490, "costo_adicional": 2490},
+        {"tipo": "Renovación multi - RFC", "precio": 9090, "costo_adicional": 2490}
     ],
     
-    "Comercial start": [
-        {"tipo": "Licencia nueva 1 RFC", "precio": 2390, "costo_adicional": 790},
-        {"tipo": "Renovación 1 RFC", "precio": 2290, "costo_adicional": 690},
-        {"tipo": "Licencia nueva multi - RFC", "precio": 3590, "costo_adicional": 1090},
-        {"tipo": "Renovación Multi - RFC", "precio": 3390, "costo_adicional": 990}
+    "Factura Electrónica": [
+        {"tipo": "Licencia nueva 1 RFC", "precio": 3790, "costo_adicional": 1190},
+        {"tipo": "Renovación 1 RFC", "precio": 3590, "costo_adicional": 1090},
+        {"tipo": "Licencia nueva multi - RFC", "precio": 3790, "costo_adicional": 1190},
+        {"tipo": "Renovación Multi - RFC", "precio": 3590, "costo_adicional": 1090}
     ],
     
     "XML en linea": [
         {"tipo": "Licencia nueva", "precio": 1790, "costo_adicional": 0},
         {"tipo": "Renovación", "precio": 1690, "costo_adicional": 0}
-    ]
+    ],
+
+     "Escritorio virtual 320 horas": [
+        {"tipo": "Duo Mensual " , "precio": 1990 , "costo_adicional": 199},
+        {"tipo": "Plus Mensual (8gb ram) ", "precio": 2890 , "costo_adicional": 199},
+        {"tipo": "XPLUS(16 ram) ", "precio": 5790, "costo_adicional": 199}
+     ],
+
+     "Escritorio virtual 24/7 horas": [
+        {"tipo": "Duo Mensual " , "precio": 1432 , "costo_adicional": 199},
+        {"tipo": "Plus Mensual (8gb ram) ", "precio": 2072 , "costo_adicional": 199},
+        {"tipo": "XPLUS(16 ram) ", "precio": 4312, "costo_adicional": 199}
+     ]
 }
 
 ventana = tk.Tk()

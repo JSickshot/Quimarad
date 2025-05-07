@@ -12,14 +12,15 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS vacaciones (
 conn.commit()
 
 COLORES_EMPLEADOS = {
-    "Mustri": "#FFFF99",
-    "Limon": "#98FB98",
-    "CCI": "#FFA07A",
-    "Toño": "#ADD8E6",
-    "Sick": "#8B0000",
-    "Garo": "#E00000",
-    "Oso":  "#C7C7C6",
-    "Jesus":"#FC4B08"
+    "Esmeralda": "#FFFF99",
+    "Juan": "#98FB98",
+    "Alejandro": "#FFA07A",
+    "Antonio": "#ADD8E6",
+    "Julio": "#8B0000",
+    "Edgar": "#E00000",
+    "Adolfo":  "#C7C7C6",
+    "Jesus":"#FC4B08",
+    "Angela":"#572364"
 }
 
 class Empleado:
@@ -143,7 +144,7 @@ class CalendarioVacaciones:
     def crear_mes(self, marco, year, mes):
         dias_semana = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"]
         for i, dia in enumerate(dias_semana):
-            tk.Label(marco, text=dia, bg="#d3d3d3", width=3, height=1, relief="ridge").grid(row=0, column=i, sticky='nsew')
+            tk.Label(marco, text=dia, bg="#1e0c85", width=3, height=1, relief="ridge").grid(row=0, column=i, sticky='nsew')
         cal = calendar.monthcalendar(year, mes)
         for i, semana in enumerate(cal):
             for j, dia in enumerate(semana):
@@ -155,13 +156,13 @@ class CalendarioVacaciones:
                               command=lambda y=year, m=mes, d=dia: self.asignar_vacacion_interactiva(y, m, d)).grid(row=i+1, column=j, sticky='nsew')
     
     def asignar_vacacion_interactiva(self, year, month, day):
-        nombre = simpledialog.askstring("Asignar Vacación", "Nombre del empleado:")
+        nombre = simpledialog.askstring("Asignar Vacación", "Nombre :")
         if nombre:
             fecha = datetime(year, month, day)
             self.asignar_vacacion_empleado(nombre, fecha)
             self.actualizar_calendario()
 
 calendario = CalendarioVacaciones()
-for nombre in ["Mustri", "Limon", "CCI", "Toño", "Sick","Garo","Oso","Jesus"]:
+for nombre in ["Esmeralda", "Juan", "Alejandro", "Antonio", "Julio","Edgar","Adolfo","Jesus","Angela"]:
     calendario.agregar_empleado(nombre)
 calendario.mostrar_calendario()
