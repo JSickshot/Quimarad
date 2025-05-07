@@ -2,49 +2,113 @@ import sqlite3
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, Menu
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
+import os
 
-db_file = 'data.db'
+# ----------------------------
+# UBICACIÓN DE ARCHIVOS
+# ----------------------------
+script_dir = os.path.dirname(os.path.abspath(__file__))  # carpeta del script
+db_file = os.path.join(script_dir, 'data.db')
+# Buscar el archivo que empiece con Renos_anual y termine en .xls o .xlsx
+excel_file = None
+for f in os.listdir(script_dir):
+    if f.startswith("Renos_anual") and (f.endswith(".xls") or f.endswith(".xlsx")):
+        excel_file = os.path.join(script_dir, f)
+        break
+
 
 conn = sqlite3.connect(db_file)
 cursor = conn.cursor()
 
-#bd
+# ----------------------------
+# CARGAR DATOS DESDE EXCEL
+# ----------------------------
+
+def inicializar_bd_desde_excel():
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Clientes (
+        rfc TEXT PRIMARY KEY,
+        nombre_empresa TEXT NOT NULL,
+        contacto TEXT,
+        correo_contacto TEXT
+    )
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Productos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rfc TEXT,
+        nombre_producto TEXT,
+        serie TEXT UNIQUE,
+        fecha_caducidad TEXT,
+        estado TEXT DEFAULT 'Pendiente',
+        FOREIGN KEY (rfc) REFERENCES Clientes(rfc)
+    )
+    ''')
+
+    if not os.path.exists(excel_file):
+        print("⚠️ Archivo Excel no encontrado:", excel_file)
+        return
+
+    df = pd.read_excel(excel_file)
+
+    # Limpiar tablas
+    cursor.execute("DELETE FROM Productos")
+    cursor.execute("DELETE FROM Clientes")
+
+    for _, row in df.iterrows():
+        cursor.execute('''
+            INSERT OR IGNORE INTO Clientes (rfc, nombre_empresa, contacto, correo_contacto)
+            VALUES (?, ?, ?, ?)
+        ''', (row['RFC'], row['Nombre Empresa'], row['Contacto'], row['Correo Contacto']))
+
+        cursor.execute('''
+            INSERT OR IGNORE INTO Productos (rfc, nombre_producto, serie, fecha_caducidad, estado)
+            VALUES (?, ?, ?, ?, 'Pendiente')
+        ''', (row['RFC'], row['Producto'], row['Serie'], row['Fecha Caducidad']))
+
+    conn.commit()
+
+inicializar_bd_desde_excel()
+
+# ----------------------------
+# FUNCIONES PRINCIPALES
+# ----------------------------
 
 def licencias_por_vencer():
     today = datetime.today()
     primer_dia_mes = today.replace(day=1)
-    ultimo_dia_proximo_mes = (primer_dia_mes.replace(month=today.month + 2, day=1) - pd.Timedelta(days=1)).date()
+    ultimo_dia_proximo_mes = (primer_dia_mes + relativedelta(months=2)).replace(day=1) - timedelta(days=1)
 
     cursor.execute('''
-    SELECT Clientes.nombre_empresa, Clientes.rfc, Clientes.contacto, Clientes.correo_contacto, 
-           Productos.nombre_producto, Productos.serie, Productos.fecha_caducidad, Productos.estado
-    FROM Clientes
-    JOIN Productos ON Clientes.rfc = Productos.rfc
-    WHERE DATE(Productos.fecha_caducidad) BETWEEN ? AND ?
-    ORDER BY DATE(Productos.fecha_caducidad) ASC
-    ''', (primer_dia_mes.date(), ultimo_dia_proximo_mes))
+        SELECT Clientes.nombre_empresa, Clientes.rfc, Clientes.contacto, Clientes.correo_contacto, 
+               Productos.nombre_producto, Productos.serie, Productos.fecha_caducidad, Productos.estado
+        FROM Clientes
+        JOIN Productos ON Clientes.rfc = Productos.rfc
+        WHERE DATE(Productos.fecha_caducidad) BETWEEN ? AND ?
+        ORDER BY DATE(Productos.fecha_caducidad) ASC
+    ''', (primer_dia_mes.date(), ultimo_dia_proximo_mes.date()))
 
     return cursor.fetchall()
 
 def buscar_cliente(valor):
     cursor.execute('''
-    SELECT Clientes.nombre_empresa, Clientes.rfc, Clientes.contacto, Clientes.correo_contacto, 
-           Productos.nombre_producto, Productos.serie, Productos.fecha_caducidad, Productos.estado
-    FROM Clientes
-    LEFT JOIN Productos ON Clientes.rfc = Productos.rfc
-    WHERE Clientes.nombre_empresa LIKE ? 
-       OR Clientes.rfc LIKE ? 
-       OR Productos.serie LIKE ? 
-       OR Productos.nombre_producto LIKE ?
-       OR Productos.serie LIKE ?
-    ORDER BY DATE(Productos.fecha_caducidad) ASC
-    ''', (f'%{valor}%', f'%{valor}%', f'%{valor}%', f'%{valor}%', f'%{valor}%')) 
+        SELECT Clientes.nombre_empresa, Clientes.rfc, Clientes.contacto, Clientes.correo_contacto, 
+               Productos.nombre_producto, Productos.serie, Productos.fecha_caducidad, Productos.estado
+        FROM Clientes
+        LEFT JOIN Productos ON Clientes.rfc = Productos.rfc
+        WHERE Clientes.nombre_empresa LIKE ? 
+           OR Clientes.rfc LIKE ? 
+           OR Productos.serie LIKE ? 
+           OR Productos.nombre_producto LIKE ?
+        ORDER BY DATE(Productos.fecha_caducidad) ASC
+    ''', (f'%{valor}%', f'%{valor}%', f'%{valor}%', f'%{valor}%')) 
     return cursor.fetchall()
 
 def mostrar_resultados(resultados):
     today = datetime.today().date()
-
     for row in tree.get_children():
         tree.delete(row)
 
@@ -79,12 +143,10 @@ def cambiar_estado(estado):
             valores = tree.item(item, 'values')
             serie = valores[5]
             cursor.execute('''
-            UPDATE Productos SET estado = ? WHERE serie = ?
+                UPDATE Productos SET estado = ? WHERE serie = ?
             ''', (estado, serie))
             conn.commit()
-
         mostrar_resultados(licencias_por_vencer())
-
 
 def copiar(event):
     seleccion = tree.selection()
@@ -92,20 +154,21 @@ def copiar(event):
         texto_copiado = ""
         for item in seleccion:
             valores = tree.item(item, 'values')
-            serie = valores[5]
             nombre = valores[0]
-            texto_copiado += nombre + "\n" + "\n" +  + serie 
+            serie = valores[5]
+            texto_copiado += f"{nombre}\n\n{serie}\n"
         root.clipboard_clear()
         root.clipboard_append(texto_copiado.strip())
-        root.update() 
+        root.update()
 
 def mostrar_menu(event):
-    seleccion = tree.selection()
-    if seleccion:
+    if tree.selection():
         menu.post(event.x_root, event.y_root)
 
+# ----------------------------
+# INTERFAZ TKINTER
+# ----------------------------
 
-#interfaz tkinter
 root = tk.Tk()
 root.title("Renovación 2025")
 
@@ -121,10 +184,8 @@ btn_buscar.pack(side=tk.LEFT)
 btn_mostrar_todas = tk.Button(frame, text="Mostrar Todas", command=lambda: mostrar_resultados(licencias_por_vencer()))
 btn_mostrar_todas.pack(side=tk.LEFT)
 
-
 columns = ("Empresa", "RFC", "Contacto", "Correo", "Producto", "Serie", "Fecha Caducidad", "Estado")
-tree = ttk.Treeview(root, columns=columns, show='headings', height=30) 
-
+tree = ttk.Treeview(root, columns=columns, show='headings', height=30)
 
 for col in columns:
     tree.heading(col, text=col)
@@ -134,7 +195,7 @@ tree.pack(pady=20)
 
 tree.tag_configure('red', background='red')
 tree.tag_configure('orange', background='orange')
-tree.tag_configure('yellow', background='yellow')
+tree.tag_configure('yellow', background='lightyellow')
 tree.tag_configure('blue', background='lightblue')
 tree.tag_configure('green', background='lightgreen')
 
@@ -144,10 +205,9 @@ menu.add_command(label="Atendido", command=lambda: cambiar_estado("Atendido"))
 
 tree.bind("<Button-3>", mostrar_menu)
 tree.bind("<Double-1>", filtrar_por_rfc)
-tree.bind("<Control-c>", copiar) 
+tree.bind("<Control-c>", copiar)
 
 mostrar_resultados(licencias_por_vencer())
 
 root.mainloop()
-
 conn.close()
