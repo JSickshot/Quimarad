@@ -5,16 +5,25 @@ from tkinter import ttk, Menu
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import os
+import sys
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-db_file = os.path.join(script_dir, 'data.db')
+# ✅ Manejo de ruta compatible con PyInstaller
+if getattr(sys, 'frozen', False):
+    script_dir = sys._MEIPASS  # Directorio temporal que usa PyInstaller
+else:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
+# ✅ Verifica si existe un archivo Excel válido
 excel_file = None
 for f in os.listdir(script_dir):
     if f.startswith("Renos_anual") and (f.endswith(".xls") or f.endswith(".xlsx")):
         excel_file = os.path.join(script_dir, f)
         break
 
+# ✅ Ruta de la base de datos SQLite
+db_file = os.path.join(script_dir, 'data.db')
+
+# ✅ Conexión a la base de datos
 conn = sqlite3.connect(db_file)
 cursor = conn.cursor()
 
@@ -45,9 +54,11 @@ def inicializar_bd_desde_excel():
         print("✔️ La base de datos ya contiene datos. No se recarga desde Excel.")
         return
 
-    if not os.path.exists(excel_file):
+    if not excel_file or not os.path.exists(excel_file):
         print("⚠️ Archivo Excel no encontrado:", excel_file)
         return
+
+    print("📄 Cargando datos desde:", excel_file)
 
     df = pd.read_excel(excel_file)
     df['Fecha Caducidad'] = pd.to_datetime(df['Fecha Caducidad'], errors='coerce').dt.strftime('%Y-%m-%d')

@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['renos.py'],
+    ['Renos.py'],
     pathex=[],
     binaries=[],
-    datas=[('logo.ico', '.')],
+    datas=[('logo.ico', '.'), ('Renos_anual.xlsx', '.'), ('data.db', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='renos',
+    name='Renos',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
