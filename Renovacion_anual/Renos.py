@@ -7,23 +7,19 @@ from dateutil.relativedelta import relativedelta
 import os
 import sys
 
-# ✅ Manejo de ruta compatible con PyInstaller
 if getattr(sys, 'frozen', False):
-    script_dir = sys._MEIPASS  # Directorio temporal que usa PyInstaller
+    script_dir = sys._MEIPASS 
 else:
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# ✅ Verifica si existe un archivo Excel válido
 excel_file = None
 for f in os.listdir(script_dir):
     if f.startswith("Renos_anual") and (f.endswith(".xls") or f.endswith(".xlsx")):
         excel_file = os.path.join(script_dir, f)
         break
 
-# ✅ Ruta de la base de datos SQLite
 db_file = os.path.join(script_dir, 'data.db')
 
-# ✅ Conexión a la base de datos
 conn = sqlite3.connect(db_file)
 cursor = conn.cursor()
 
@@ -51,14 +47,10 @@ def inicializar_bd_desde_excel():
 
     cursor.execute("SELECT COUNT(*) FROM Productos")
     if cursor.fetchone()[0] > 0:
-        print("✔️ La base de datos ya contiene datos. No se recarga desde Excel.")
         return
 
     if not excel_file or not os.path.exists(excel_file):
-        print("⚠️ Archivo Excel no encontrado:", excel_file)
         return
-
-    print("📄 Cargando datos desde:", excel_file)
 
     df = pd.read_excel(excel_file)
     df['Fecha Caducidad'] = pd.to_datetime(df['Fecha Caducidad'], errors='coerce').dt.strftime('%Y-%m-%d')
@@ -156,8 +148,9 @@ def copiar(event):
         for item in seleccion:
             valores = tree.item(item, 'values')
             nombre = valores[0]
+            contacto = valores[3]
             serie = valores[5]
-            texto_copiado += f"{nombre}\n\n{serie}\n"
+            texto_copiado += f"{nombre}\n\n{serie}\n\n{contacto}"
         root.clipboard_clear()
         root.clipboard_append(texto_copiado.strip())
         root.update()
@@ -167,7 +160,7 @@ def mostrar_menu(event):
         menu.post(event.x_root, event.y_root)
 
 root = tk.Tk()
-root.title("Renovación 2025")
+root.title("Renovaciones 2025")
 
 frame = tk.Frame(root)
 frame.pack(pady=10)
@@ -182,7 +175,7 @@ btn_mostrar_todas = tk.Button(frame, text="Mostrar Todas", command=lambda: mostr
 btn_mostrar_todas.pack(side=tk.LEFT)
 
 columns = ("Empresa", "RFC", "Contacto", "Correo", "Producto", "Serie", "Fecha Caducidad", "Estado")
-tree = ttk.Treeview(root, columns=columns, show='headings', height=30)
+tree = ttk.Treeview(root, columns=columns, show='headings', height=50)
 
 for col in columns:
     tree.heading(col, text=col)
