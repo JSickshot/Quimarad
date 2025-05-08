@@ -6,25 +6,17 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import os
 
-# ----------------------------
-# UBICACIÓN DE ARCHIVOS
-# ----------------------------
-script_dir = os.path.dirname(os.path.abspath(__file__))  # carpeta del script
+script_dir = os.path.dirname(os.path.abspath(__file__))
 db_file = os.path.join(script_dir, 'data.db')
-# Buscar el archivo que empiece con Renos_anual y termine en .xls o .xlsx
+
 excel_file = None
 for f in os.listdir(script_dir):
     if f.startswith("Renos_anual") and (f.endswith(".xls") or f.endswith(".xlsx")):
         excel_file = os.path.join(script_dir, f)
         break
 
-
 conn = sqlite3.connect(db_file)
 cursor = conn.cursor()
-
-# ----------------------------
-# CARGAR DATOS DESDE EXCEL
-# ----------------------------
 
 def inicializar_bd_desde_excel():
     cursor.execute('''
@@ -48,15 +40,17 @@ def inicializar_bd_desde_excel():
     )
     ''')
 
+    cursor.execute("SELECT COUNT(*) FROM Productos")
+    if cursor.fetchone()[0] > 0:
+        print("✔️ La base de datos ya contiene datos. No se recarga desde Excel.")
+        return
+
     if not os.path.exists(excel_file):
         print("⚠️ Archivo Excel no encontrado:", excel_file)
         return
 
     df = pd.read_excel(excel_file)
-
-    # Limpiar tablas
-    cursor.execute("DELETE FROM Productos")
-    cursor.execute("DELETE FROM Clientes")
+    df['Fecha Caducidad'] = pd.to_datetime(df['Fecha Caducidad'], errors='coerce').dt.strftime('%Y-%m-%d')
 
     for _, row in df.iterrows():
         cursor.execute('''
@@ -72,10 +66,6 @@ def inicializar_bd_desde_excel():
     conn.commit()
 
 inicializar_bd_desde_excel()
-
-# ----------------------------
-# FUNCIONES PRINCIPALES
-# ----------------------------
 
 def licencias_por_vencer():
     today = datetime.today()
@@ -145,7 +135,7 @@ def cambiar_estado(estado):
             cursor.execute('''
                 UPDATE Productos SET estado = ? WHERE serie = ?
             ''', (estado, serie))
-            conn.commit()
+        conn.commit()
         mostrar_resultados(licencias_por_vencer())
 
 def copiar(event):
@@ -164,10 +154,6 @@ def copiar(event):
 def mostrar_menu(event):
     if tree.selection():
         menu.post(event.x_root, event.y_root)
-
-# ----------------------------
-# INTERFAZ TKINTER
-# ----------------------------
 
 root = tk.Tk()
 root.title("Renovación 2025")
@@ -202,6 +188,7 @@ tree.tag_configure('green', background='lightgreen')
 menu = Menu(root, tearoff=0)
 menu.add_command(label="Pendiente", command=lambda: cambiar_estado("Pendiente"))
 menu.add_command(label="Atendido", command=lambda: cambiar_estado("Atendido"))
+menu.add_command(label="En proceso", command=lambda: cambiar_estado("En proceso"))
 
 tree.bind("<Button-3>", mostrar_menu)
 tree.bind("<Double-1>", filtrar_por_rfc)
