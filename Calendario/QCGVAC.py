@@ -99,7 +99,7 @@ class CalendarioVacaciones:
     def mostrar_calendario(self):
         self.ventana_principal = tk.Tk()
         self.ventana_principal.title("Calendario de Vacaciones")
-        self.ventana_principal.state("zoomed")
+        self.ventana_principal.state("normal")
 
         menu = tk.Menu(self.ventana_principal)
         self.ventana_principal.config(menu=menu)
@@ -162,7 +162,7 @@ class CalendarioVacaciones:
     def asignar_vacacion_interactiva(self, year, month, day):
         ventana = tk.Toplevel(self.ventana_principal)
         ventana.title(f"Vacaciones {day}/{month}/{year}")
-        ventana.geometry("300x300")
+        ventana.maxsize(1000, 800)
 
         tk.Label(ventana, text="Empleado:").pack()
         nombre_var = tk.StringVar()
@@ -222,7 +222,9 @@ class CalendarioVacaciones:
     def mostrar_vacaciones_restantes(self):
         ventana = tk.Toplevel(self.ventana_principal)
         ventana.title("Vacaciones Restantes por Empleado")
-        ventana.geometry("600x400")
+        screen_width=ventana.winfo_screenwidth()
+        screen_height=ventana.winfo_screenheight()
+        ventana.geometry(f"{screen_width}x{screen_height}") 
         año_actual = datetime.now().year
 
         tree = ttk.Treeview(ventana, columns=("Ingreso", "Días Restantes"), show="headings")
@@ -248,7 +250,7 @@ class CalendarioVacaciones:
                     for row in tree.get_children():
                         valores = tree.item(row)['values']
                         f.write(",".join(str(v) for v in valores) + "\n")
-                messagebox.showinfo("Exportado", "Vacaciones restantes exportadas.")
+                messagebox.showinfo("Exportado", "Días restantes exportados.")
 
         tk.Button(ventana, text="Excel", command=exportar, bg="green", fg="white").pack(pady=10)
 
