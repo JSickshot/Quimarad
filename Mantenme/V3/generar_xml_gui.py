@@ -27,7 +27,6 @@ def generar_xml_gui():
     if not salida_txt:
         return
 
-    # Usamos las funciones de los módulos
     observacion = generar_observacion(ruta_excel)
     xml = construir_xml(folio, referencia, observacion)
     guardar_xml(xml, salida_txt)

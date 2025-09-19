@@ -1,0 +1,35 @@
+{
+  "schema": "PPR.XSD",
+  "tns": {
+    "a": "http://www.dfdchryslerdemexico.com.mx/Addenda/PPR"
+  },
+  "data": {
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}Cancelaciones": [
+      {}
+    ],
+    "_{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}Cancelaciones_container": null,
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}moneda": {},
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}proveedor": {},
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}origen": {},
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}destino": {},
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}receiving": {},
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}departamento": {},
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}nota": [
+      "hola"
+    ],
+    "_{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}nota_container": null,
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}cargosCreditos": [
+      {}
+    ],
+    "_{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}cargosCreditos_container": null,
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}otrosCargos": [
+      {},
+      {}
+    ],
+    "_{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}otrosCargos_container": null,
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}partes": {
+      "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}part": [],
+      "_{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}part_container": null
+    }
+  }
+}
