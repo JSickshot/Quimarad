@@ -6,7 +6,7 @@ def load_xml(xml_path):
 
 def insert_addenda(tree, addenda_element):
     root = tree.getroot()
-    ns = {"cfdi": "http://www.sat.gob.mx/cfd/4"}  # Ajustar versión CFDI si aplica
+    ns = {"cfdi": "http://www.sat.gob.mx/cfd/4"}
     complemento = root.find("cfdi:Complemento", ns)
 
     if complemento is not None:

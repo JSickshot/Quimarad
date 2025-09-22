@@ -12,18 +12,18 @@ class AddendaApp:
 
         self.fields = {}
         self.xml_tree = None
-        self.addenda_name = "CustomAddenda"  # nombre por defecto
+        self.addenda_name = "CustomAddenda"
 
-        # Botones
+    
         tk.Button(root, text="Cargar XSD", command=self.load_xsd).pack(pady=3)
         tk.Button(root, text="Cargar XML Timbrado", command=self.load_xml).pack(pady=3)
         tk.Button(root, text="Guardar XML con Addenda", command=self.save_xml).pack(pady=3)
 
-        # Frame para formulario dinámico
+       
         self.form_frame = tk.Frame(root)
         self.form_frame.pack(padx=10, pady=10, fill="both", expand=True)
 
-        # Previsualización
+      
         tk.Label(root, text="Previsualización XML:").pack()
         self.preview = scrolledtext.ScrolledText(root, height=15, state="normal")
         self.preview.pack(padx=10, pady=10, fill="both", expand=True)
@@ -36,17 +36,17 @@ class AddendaApp:
         schema_doc = etree.parse(path)
         schema_root = schema_doc.getroot()
 
-        # limpiar formulario anterior
+        
         for w in self.form_frame.winfo_children():
             w.destroy()
         self.fields.clear()
 
-        # Detectar nombre principal de la addenda (primer element name)
+    
         first_elem = schema_root.find(".//{http://www.w3.org/2001/XMLSchema}element")
         if first_elem is not None and first_elem.get("name"):
             self.addenda_name = first_elem.get("name")
 
-        # Crear formulario recursivo
+
         for element in schema_root.findall(".//{http://www.w3.org/2001/XMLSchema}element"):
             name = element.get("name")
             if name:
