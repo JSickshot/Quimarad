@@ -1,0 +1,11 @@
+{
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura": "Crysler",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@tipoDocumento": "tipoDocumento=12",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@TipoDocumentoFiscal": "TipoDocumentoFiscal=sepa",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@version": "version=1",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@serie": "serie=1234",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@folioFiscal": "folioFiscal=123",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@fecha": "fecha=22/09/2025",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@montoTotal": "montoTotal=123123123",
+    "{http://www.dfdchryslerdemexico.com.mx/Addenda/PPR}factura@referenciaProveedor": "referenciaProveedor=4123"
+}
