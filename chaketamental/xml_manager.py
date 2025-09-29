@@ -1,77 +1,65 @@
 import xml.etree.ElementTree as ET
 
-def load_xml(path):
-    tree = ET.parse(path)
-    return tree, tree.getroot()
-
-def save_xml(tree, path):
-    tree.write(path, encoding="utf-8", xml_declaration=True)
-
-def ensure_unqualified_addenda(root):
+def asegurar_addenda(root):
     """
-    Garantiza que exista <Addenda> SIN prefijo (no cfdi:).
-    Si existe cfdi:Addenda, la reutiliza en lugar de duplicar.
+    Devuelve el nodo <Addenda> (SIN prefijo). Si no está, lo crea así.
     """
-    # ¿ya hay Addenda sin prefijo?
+    # Buscar sin prefijo
     addenda = root.find("Addenda")
     if addenda is not None:
         return addenda
 
-    # ¿hay cfdi:Addenda?
-    cfdi_ns = {"cfdi": "http://www.sat.gob.mx/cfd/4"}
-    addenda_cfdi = root.find("cfdi:Addenda", cfdi_ns)
-    if addenda_cfdi is not None:
-        # No vamos a duplicar: usaremos la que está
-        return addenda_cfdi
+    # Buscar con prefijo (por si existe) y convertir: limpiarlo y crear nuevo sin prefijo
+    for child in list(root):
+        tag = child.tag
+        if tag.endswith("}Addenda"):
+            # mover contenido a uno sin prefijo
+            new_addenda = ET.Element("Addenda")
+            for sub in list(child):
+                child.remove(sub)
+                new_addenda.append(sub)
+            # reemplazar el nodo
+            root.remove(child)
+            root.append(new_addenda)
+            return new_addenda
 
-    # Crear nueva sin prefijo
+    # Crear nuevo
     return ET.SubElement(root, "Addenda")
 
-def insert_by_path(parent, path, value):
+def construir_addenda(root_cfdi, shapes, valores_form):
     """
-    Inserta valor siguiendo rutas 'A/B/C' o 'A/B@attr'.
-    Crea nodos intermedios si no existen.
+    Inserta bajo <Addenda> los elementos definidos por 'shapes'
+    usando 'valores_form' (dict de rutas->texto/attr). Nodos SIN namespace.
     """
-    if not value:
-        return
+    addenda = asegurar_addenda(root_cfdi)
 
-    # Atributo
-    if "@" in path:
-        elem_path, attr = path.split("@", 1)
-        curr = parent
-        for tag in [p for p in elem_path.split("/") if p]:
-            found = curr.find(tag)
-            if found is None:
-                found = ET.SubElement(curr, tag)
-            curr = found
-        curr.set(attr, value)
-    else:
-        curr = parent
-        parts = [p for p in path.split("/") if p]
-        for i, tag in enumerate(parts):
-            if i == len(parts) - 1:
-                leaf = ET.SubElement(curr, tag)
-                leaf.text = value
-            else:
-                found = curr.find(tag)
-                if found is None:
-                    found = ET.SubElement(curr, tag)
-                curr = found
+    # limpiar addenda anterior
+    for ch in list(addenda):
+        addenda.remove(ch)
 
-def build_addenda(root, addenda_root_name, entries_dict):
-    """
-    Construye bajo <Addenda> un nodo raíz con el nombre del XSD (p.ej. DSCargaRemisionProv)
-    y debajo coloca la estructura de entries (paths -> valores).
-    """
-    addenda = ensure_unqualified_addenda(root)
+    def set_attrs(node_path, elem):
+        prefix = f"{node_path}@"
+        for k, v in valores_form.items():
+            if not v:
+                continue
+            if k.startswith(prefix):
+                attr = k.split("@", 1)[1]
+                elem.set(attr, v)
 
-    # Opcional: eliminar previo nodo de la misma raíz para regenerar limpio
-    for child in list(addenda):
-        if child.tag == addenda_root_name:
-            addenda.remove(child)
+    def build_elem(sh, path, parent):
+        name = sh.get("name") or "Elemento"
+        cur_path = f"{path}/{name}" if path and name else (name or path)
+        elem = ET.SubElement(parent, name)
 
-    cont = ET.SubElement(addenda, addenda_root_name)
+        if cur_path in valores_form and (valores_form[cur_path] or "").strip():
+            elem.text = valores_form[cur_path].strip()
 
-    # Insertar cada campo por su ruta
-    for path, value in entries_dict.items():
-        insert_by_path(cont, path, value)
+        set_attrs(cur_path, elem)
+
+        for c in sh.get("children", []):
+            build_elem(c, cur_path, elem)
+
+    for s in shapes:
+        build_elem(s, "", addenda)
+
+    return addenda
