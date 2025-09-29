@@ -31,7 +31,6 @@ class InterfazApp:
         ttk.Button(bar, text="Generar vista previa", command=self.generar_preview).pack(side="left", padx=5)
         ttk.Button(bar, text="Guardar XML con Addenda", command=self.guardar_xml).pack(side="left", padx=5)
 
-        # Canvas con scroll para el formulario
         wrap = ttk.Frame(self.root)
         wrap.pack(fill="both", expand=True, padx=10, pady=8)
 
@@ -48,18 +47,15 @@ class InterfazApp:
         self.vsb.pack(side="right", fill="y")
         self.hsb.pack(side="bottom", fill="x")
 
-        # Vista previa
         ttk.Label(self.root, text="Vista previa del XML con Addenda:").pack(anchor="w", padx=10)
         self.preview = tk.Text(self.root, height=16, wrap="none")
         self.preview.pack(fill="both", expand=False, padx=10, pady=6)
 
-        # scroll rueda mouse
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
 
     def _on_mousewheel(self, e):
         self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
 
-    # ---------- Acciones ----------
     def cargar_xml(self):
         ruta = filedialog.askopenfilename(filetypes=[("XML", "*.xml")])
         if not ruta:
@@ -93,13 +89,11 @@ class InterfazApp:
                 group = parts[1]  # Remision, Pedidos, Articulos, etc.
             groups.setdefault(group, []).append(p)
 
-        # Construir formulario por grupos
         for gname, paths in groups.items():
             lf = ttk.LabelFrame(self.form_frame, text=gname)
             lf.pack(fill="x", padx=6, pady=6)
 
             for path in sorted(paths):
-                # Texto de etiqueta amigable
                 label_txt = path.split("/")[-1]
                 if "@" in label_txt:
                     label_txt = "@" + label_txt.split("@", 1)[1]
