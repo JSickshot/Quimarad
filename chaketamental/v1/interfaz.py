@@ -12,17 +12,16 @@ from xml_manager import construir_addenda
 class InterfazApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Generador Global de Addendas CFDI")
+        self.root.title("Addendas global")
         self.root.geometry("1100x720")
 
         self.xml_path = None
         self.shapes = None
         self.factura_header = {}
         self.factura_conceptos = []
-        self.campos = {}        # ruta -> tk.Entry
-        self.autofilled = set() # rutas autorrellenas (bloqueadas)
+        self.campos = {}
+        self.autofilled = set()
 
-        # --- Contenedor con scroll ---
         wrap = tk.Frame(root)
         wrap.pack(fill="both", expand=True)
 
@@ -53,7 +52,7 @@ class InterfazApp:
         self.info = tk.Label(root, text="Carga un XML timbrado y un XSD para comenzar.", fg="#444")
         self.info.pack(fill="x", padx=10)
 
-    # ------------------- Acciones -------------------
+
 
     def cargar_xml(self):
         ruta = filedialog.askopenfilename(title="Selecciona CFDI XML", filetypes=[("XML", "*.xml")])
@@ -102,8 +101,6 @@ class InterfazApp:
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo cargar el esquema guardado:\n{e}")
 
-    # ------------------- Form Dinámico -------------------
-
     def _clear_form(self):
         for w in self.frame.winfo_children():
             w.destroy()
@@ -116,7 +113,6 @@ class InterfazApp:
             tk.Label(self.frame, text="Carga un XSD para continuar.").pack(anchor="w", padx=8, pady=6)
             return
 
-        # Sugerencias de autovalores desde CFDI
         autovals = {}
         if self.factura_header:
             autovals = sugerir_autovalores(self.shapes, self.factura_header, self.factura_conceptos)
@@ -161,8 +157,6 @@ class InterfazApp:
             draw_shape(s, 0, "")
 
         tk.Label(self.frame, text="Los campos autorrellenos desde CFDI están bloqueados.", fg="#666").pack(anchor="w", padx=10, pady=8)
-
-    # ------------------- Guardado -------------------
 
     def guardar_addenda(self):
         if not self.xml_path:

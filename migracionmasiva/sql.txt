@@ -1,0 +1,232 @@
+# Rewrite using triple-double-quoted raw string to avoid ''' conflicts inside T-SQL dynamic string.
+from pathlib import Path
+
+ps_code = r"""# Attach-Convert-Update.ps1
+<#
+.SYNOPSIS
+  Adjunta bases CONTPAQi desde la carpeta DATA ya preparada y realiza conversión/actualización post-attach.
+#>
+
+param(
+  [string]$Instance = "localhost\COMPAC",
+  [string]$DataPath,
+  [switch]$QuickCheck
+)
+
+$ErrorActionPreference = "Stop"
+
+function Ensure-ModuleSqlServer {
+  try {
+    Import-Module SqlServer -ErrorAction Stop
+  } catch {
+    Write-Host "Instalando módulo SqlServer..." -ForegroundColor Yellow
+    Install-Module SqlServer -Scope AllUsers -Force -AllowClobber
+    Import-Module SqlServer -ErrorAction Stop
+  }
+}
+
+function Get-DataPath([string]$Instance){
+  $q = @"
+DECLARE @p nvarchar(4000);
+IF TRY_CONVERT(int, PARSENAME(CONVERT(varchar(50),SERVERPROPERTY('ProductVersion')),4)) >= 13
+    SELECT @p = CAST(SERVERPROPERTY('InstanceDefaultDataPath') as nvarchar(4000));
+IF @p IS NULL
+BEGIN
+    DECLARE @r nvarchar(4000)='';
+    EXEC master.dbo.xp_instance_regread 
+         N'HKEY_LOCAL_MACHINE',N'Software\Microsoft\MSSQLServer\MSSQLServer',
+         N'DefaultData', @r OUTPUT, 'no_output';
+    SELECT @p = NULLIF(@r,'');
+END
+SELECT DataPath=@p;
+"@
+  $r = Invoke-Sqlcmd -ServerInstance $Instance -Query $q
+  if (-not $r -or -not $r.DataPath) { throw "No pude determinar la carpeta DATA de la instancia." }
+  $p = [string]$r.DataPath
+  if ($p.Length -gt 0 -and $p[-1] -ne '\') { $p += '\' }
+  return $p
+}
+
+function Get-CompatLevelTarget([string]$Instance){
+  $r = Invoke-Sqlcmd -ServerInstance $Instance -Query "SELECT CAST(SERVERPROPERTY('ProductVersion') as varchar(50)) AS v;"
+  $v = [string]$r.v
+  $major = [int]($v.Split('.')[0])
+  switch ($major) {
+    {$_ -ge 16} { return 160 }
+    15          { return 150 }
+    14          { return 140 }
+    default     { return 150 }
+  }
+}
+
+function Db-Exists([string]$Instance, [string]$DbName){
+  $r = Invoke-Sqlcmd -ServerInstance $Instance -Query "SELECT DB_ID(N'$DbName') AS id;"
+  return ($r.id -ne $null)
+}
+
+function Pick-LogFile([string]$DataPath, [string]$DbName){
+  $cands = @(
+    (Join-Path $DataPath "$DbName`_log.ldf"),
+    (Join-Path $DataPath "$DbName.ldf"),
+    (Join-Path $DataPath "mastlog.ldf$DbName.ldf")
+  )
+  foreach($c in $cands){ if (Test-Path $c){ return $c } }
+  return $null
+}
+
+function Attach-Db([string]$Instance, [string]$DataPath, [string]$DbName){
+  $mdf = Join-Path $DataPath "$DbName.mdf"
+  if (-not (Test-Path $mdf)){
+    Write-Host "   [$DbName] no existe MDF -> $mdf (omitida)" -ForegroundColor DarkYellow
+    return $false
+  }
+  if (Db-Exists -Instance $Instance -DbName $DbName){
+    Write-Host "   [$DbName] ya adjunta." -ForegroundColor Gray
+    return $true
+  }
+  $ldf = Pick-LogFile -DataPath $DataPath -DbName $DbName
+  $sql = if ($ldf) {
+    "CREATE DATABASE [$DbName] ON (FILENAME=N'$mdf'), (FILENAME=N'$ldf') FOR ATTACH;"
+  } else {
+    "CREATE DATABASE [$DbName] ON (FILENAME=N'$mdf') FOR ATTACH_REBUILD_LOG;"
+  }
+  try {
+    Invoke-Sqlcmd -ServerInstance $Instance -Query $sql -QueryTimeout 0
+    Write-Host "   [$DbName] adjuntada OK." -ForegroundColor Green
+    return $true
+  } catch {
+    Write-Host "   [$DbName] ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    return $false
+  }
+}
+
+function Run-Query([string]$Instance, [string]$DbName, [string]$Query){
+  Invoke-Sqlcmd -ServerInstance $Instance -Database $DbName -Query $Query -QueryTimeout 0
+}
+
+function Get-ComercialAliases([string]$Instance){
+  try {
+    $q = @"
+;WITH E AS (SELECT crutadatos FROM Empresas WHERE cidempresa<>1)
+SELECT Alias = REVERSE(SUBSTRING(REVERSE(crutadatos),1,CHARINDEX('\',REVERSE(crutadatos))-1))
+FROM E WHERE crutadatos LIKE '%\%';
+"@
+    $r = Run-Query -Instance $Instance -DbName "CompacwAdmin" -Query $q
+    return $r | Select-Object -ExpandProperty Alias
+  } catch {
+    Write-Host "   (Aviso) No pude leer CompacwAdmin..Empresas: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    return @()
+  }
+}
+
+function Get-GeneralAliases([string]$Instance){
+  try {
+    $q = "SELECT aliasbdd FROM listaempresas WHERE NULLIF(aliasbdd,'') IS NOT NULL;"
+    $r = Run-Query -Instance $Instance -DbName "generalessql" -Query $q
+    return $r | Select-Object -ExpandProperty aliasbdd
+  } catch {
+    Write-Host "   (Aviso) No pude leer generalessql..listaempresas: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    return @()
+  }
+}
+
+function Get-NomAliases([string]$Instance){
+  try {
+    $q = "SELECT rutaempresa FROM nom10000 WHERE NULLIF(rutaempresa,'') IS NOT NULL;"
+    $r = Run-Query -Instance $Instance -DbName "nomgenerales" -Query $q
+    return $r | Select-Object -ExpandProperty rutaempresa
+  } catch {
+    Write-Host "   (Aviso) No pude leer nomgenerales..nom10000: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    return @()
+  }
+}
+
+function Get-DbDirectoryAliases([string]$Instance){
+  try {
+    $q = "SELECT DB_DocumentsMetadata,DB_DocumentsContent,DB_OthersMetadata,DB_OthersContent FROM DatabaseDirectory;"
+    $r = Run-Query -Instance $Instance -DbName "DB_Directory" -Query $q
+    $list = New-Object System.Collections.Generic.List[string]
+    foreach($row in $r){
+      foreach($n in @($row.DB_DocumentsMetadata,$row.DB_DocumentsContent,$row.DB_OthersMetadata,$row.DB_OthersContent)){
+        if ($n -and [string]$n -ne ""){ [void]$list.Add([string]$n) }
+      }
+    }
+    return $list.ToArray()
+  } catch {
+    Write-Host "   (Aviso) No pude leer DB_Directory..DatabaseDirectory: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    return @()
+  }
+}
+
+function Post-Update([string]$Instance, [int]$CompatLevel){
+  $q = @"
+DECLARE @lvl int = $CompatLevel;
+DECLARE @sql nvarchar(max) = N'';
+SELECT @sql = STRING_AGG(CONVERT(nvarchar(max),
+    'IF DB_ID('''+name+''') > 4 BEGIN ' +
+    'ALTER DATABASE ['+name+'] SET COMPATIBILITY_LEVEL = '+CAST(@lvl as varchar(10))+'; ' +
+    'BEGIN TRY ALTER AUTHORIZATION ON DATABASE::['+name+'] TO sa; END TRY BEGIN CATCH END CATCH; ' +
+    'ALTER DATABASE ['+name+'] SET AUTO_CLOSE OFF; ' +
+    'ALTER DATABASE ['+name+'] SET AUTO_SHRINK OFF; ' +
+    'ALTER DATABASE ['+name+'] SET PAGE_VERIFY CHECKSUM; ' +
+    'END'
+), ' ')
+FROM sys.databases
+WHERE database_id > 4;
+EXEC (@sql);
+"@
+  Invoke-Sqlcmd -ServerInstance $Instance -Query $q -QueryTimeout 0
+}
+
+function Quick-CheckDb([string]$Instance){
+  $dbs = Invoke-Sqlcmd -ServerInstance $Instance -Query "SELECT name FROM sys.databases WHERE database_id > 4 ORDER BY name;"
+  foreach($row in $dbs){
+    $db = [string]$row.name
+    try {
+      Invoke-Sqlcmd -ServerInstance $Instance -Query "DBCC CHECKDB([$db]) WITH NO_INFOMSGS, PHYSICAL_ONLY;" -QueryTimeout 0
+      Write-Host "   CHECKDB OK: $db" -ForegroundColor Green
+    } catch {
+      Write-Host "   CHECKDB ERROR $db: $($_.Exception.Message)" -ForegroundColor Red
+    }
+  }
+}
+
+# --- MAIN ---
+Ensure-ModuleSqlServer
+
+if (-not $DataPath -or $DataPath -eq ''){
+  $DataPath = Get-DataPath -Instance $Instance
+}
+Write-Host "Instancia: $Instance" -ForegroundColor Cyan
+Write-Host "DATA: $DataPath" -ForegroundColor Cyan
+
+$targetLevel = Get-CompatLevelTarget -Instance $Instance
+Write-Host "Nivel de compatibilidad objetivo: $targetLevel" -ForegroundColor Cyan
+
+# 1) Adjuntar CATÁLOGOS si existen MDF
+Write-Host "`n[1/3] Adjuntando catálogos..." -ForegroundColor Magenta
+$catalogos = @("DB_Directory","predeterminada","generalessql","CompacwAdmin","repositorioadminpaq","Nomgenerales")
+foreach($db in $catalogos){ [void](Attach-Db -Instance $Instance -DataPath $DataPath -DbName $db) }
+
+# 2) Adjuntar EMPRESAS a partir de catálogos
+Write-Host "`n[2/3] Descubriendo y adjuntando empresas..." -ForegroundColor Magenta
+$empresas = @()
+$empresas += Get-ComercialAliases -Instance $Instance
+$empresas += Get-GeneralAliases -Instance $Instance
+$empresas += Get-NomAliases -Instance $Instance
+$empresas += Get-DbDirectoryAliases -Instance $Instance
+$empresas = $empresas | Where-Object { $_ -and $_.Trim() -ne '' } | Sort-Object -Unique
+foreach($alias in $empresas){ [void](Attach-Db -Instance $Instance -DataPath $DataPath -DbName $alias) }
+
+# 3) Post-attach: compatibilidad/owner/opciones
+Write-Host "`n[3/3] Aplicando conversión/actualización..." -ForegroundColor Magenta
+Post-Update -Instance $Instance -CompatLevel $targetLevel
+
+if ($QuickCheck){ Quick-CheckDb -Instance $Instance }
+
+Write-Host "`nListo. Abre tu sistema y valida empresas." -ForegroundColor Green
+"""
+
+out_path = Path("/mnt/data/Attach-Convert-Update.ps1")
+out_path.write_text(ps_code, encoding="utf-8")
+out_path.as_posix()

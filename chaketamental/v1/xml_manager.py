@@ -4,26 +4,23 @@ def asegurar_addenda(root):
     """
     Devuelve el nodo <Addenda> (SIN prefijo). Si no está, lo crea así.
     """
-    # Buscar sin prefijo
     addenda = root.find("Addenda")
     if addenda is not None:
         return addenda
 
-    # Buscar con prefijo (por si existe) y convertir: limpiarlo y crear nuevo sin prefijo
     for child in list(root):
         tag = child.tag
         if tag.endswith("}Addenda"):
-            # mover contenido a uno sin prefijo
+
             new_addenda = ET.Element("Addenda")
             for sub in list(child):
                 child.remove(sub)
                 new_addenda.append(sub)
-            # reemplazar el nodo
+           
             root.remove(child)
             root.append(new_addenda)
             return new_addenda
 
-    # Crear nuevo
     return ET.SubElement(root, "Addenda")
 
 def construir_addenda(root_cfdi, shapes, valores_form):
@@ -33,7 +30,6 @@ def construir_addenda(root_cfdi, shapes, valores_form):
     """
     addenda = asegurar_addenda(root_cfdi)
 
-    # limpiar addenda anterior
     for ch in list(addenda):
         addenda.remove(ch)
 

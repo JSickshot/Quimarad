@@ -1,7 +1,5 @@
 import xml.etree.ElementTree as ET
 
-# ===================== Utilidades XSD =====================
-
 XS_NS = "http://www.w3.org/2001/XMLSchema"
 NSMAP = {"xs": XS_NS}
 
@@ -60,14 +58,12 @@ def _resolve_element_shape(elem, complex_types, root):
         "ref": ref
     }
 
-    # Resolver por ref (básico)
     if ref and not name:
         ref_name = ref.split(":")[-1]
         ref_elem = root.find(f"xs:element[@name='{ref_name}']", NSMAP)
         if ref_elem is not None:
             return _resolve_element_shape(ref_elem, complex_types, root)
 
-    # complexType inline
     cplx = elem.find("xs:complexType", NSMAP)
     if cplx is not None:
         for a in cplx.findall(".//xs:attribute", NSMAP):
@@ -80,14 +76,11 @@ def _resolve_element_shape(elem, complex_types, root):
             shape["children"].append(_resolve_element_shape(e, complex_types, root))
         return shape
 
-    # Tipo referenciado
     if el_type:
         tname = el_type.split(":")[-1]
         if tname in complex_types:
             ct = complex_types[tname]
-            # atributos del tipo
             shape["attrs"].extend(ct["attrs"])
-            # hijos del tipo
             for e in ct["children"]:
                 child = {
                     "name": e["name"],
@@ -98,7 +91,7 @@ def _resolve_element_shape(elem, complex_types, root):
                     "children": [],
                     "ref": e.get("ref")
                 }
-                # Resolver nietos si el hijo es ComplexType referenciado
+
                 if child["type"]:
                     ct_child = child["type"].split(":")[-1]
                     if ct_child in complex_types:
@@ -114,7 +107,7 @@ def _resolve_element_shape(elem, complex_types, root):
                                 "children": [],
                                 "ref": g.get("ref")
                             }
-                            # no profundizamos infinitamente para mantener rendimiento
+                            
                             child["children"].append(grand)
                 shape["children"].append(child)
 
@@ -185,8 +178,6 @@ def cargar_xsd_guardado(ruta_guardado="xsd_guardado.xml"):
     shapes = [read_shape(e) for e in root.findall("element")]
     return shapes
 
-# ===================== Lectura CFDI =====================
-
 def extraer_datos_factura(xml_path):
     """Devuelve (datos_header, conceptos) desde un CFDI v4.0."""
     ns = {
@@ -207,7 +198,6 @@ def extraer_datos_factura(xml_path):
         "Version": root.get("Version", ""),
     }
 
-    # Emisor / Receptor
     emisor = root.find("cfdi:Emisor", ns)
     if emisor is not None:
         datos["RfcEmisor"] = emisor.get("Rfc", "")
@@ -218,20 +208,17 @@ def extraer_datos_factura(xml_path):
         datos["RfcReceptor"] = receptor.get("Rfc", "")
         datos["NombreReceptor"] = receptor.get("Nombre", "")
 
-    # UUID timbre
     uuid = ""
     tfd = root.find("cfdi:Complemento/tfd:TimbreFiscalDigital", ns)
     if tfd is not None:
         uuid = tfd.get("UUID", "")
     datos["UUID"] = uuid
 
-    # IVA traslado 002 (si existe)
     traslado = root.find("cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado[@Impuesto='002']", ns)
     if traslado is not None:
         datos["ImporteIVA"] = traslado.get("Importe", "")
         datos["Impuesto"] = traslado.get("Impuesto", "002")
 
-    # Conceptos
     conceptos = []
     for c in root.findall("cfdi:Conceptos/cfdi:Concepto", ns):
         conceptos.append({
@@ -243,8 +230,6 @@ def extraer_datos_factura(xml_path):
         })
 
     return datos, conceptos
-
-# ===================== Heurísticas de autollenado =====================
 
 CFDI_TO_ADDENDA_HINTS = {
     "Total": ["montoTotal", "Total", "ImporteTotal"],
@@ -295,7 +280,6 @@ def sugerir_autovalores(shapes, datos_cfdi, conceptos):
         name = sh.get("name") or ""
         cur_path = f"{path}/{name}" if path and name else (name or path)
 
-        # Atributos del elemento
         for a in sh.get("attrs", []):
             ruta_attr = f"{cur_path}@{a['name']}"
             valor = ""
@@ -306,7 +290,6 @@ def sugerir_autovalores(shapes, datos_cfdi, conceptos):
             if valor:
                 autovals[ruta_attr] = valor
 
-        # Texto de elemento (por nombre)
         if name:
             for k_cfdi, destinos in CFDI_TO_ADDENDA_HINTS.items():
                 for d in destinos:
@@ -316,7 +299,6 @@ def sugerir_autovalores(shapes, datos_cfdi, conceptos):
                             autovals[cur_path] = val
                             break
 
-        # Conceptos → Artículos (heurística rápida sobre el primero)
         if conceptos:
             first = conceptos[0]
             if _norm(name) in ("codigo", "sku", "articulo"):

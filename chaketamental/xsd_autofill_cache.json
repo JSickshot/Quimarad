@@ -1,0 +1,31 @@
+{
+  "fa2e6a571d68397c3c11184e45df0fecf463e534": {
+    "serie": "serie",
+    "folioFiscal": "folio",
+    "fecha": "fecha",
+    "montoTotal": "total"
+  },
+  "1ef3d2f75a8ad1b5b660687043b7f928e62890ab": {
+    "serie": "serie",
+    "folioFiscal": "folio",
+    "fecha": "fecha",
+    "montoTotal": "total"
+  },
+  "2ebb25b1d001f5fb9feb0e2f8aae3b164a717c64": {
+    "Serie": "serie",
+    "Folio": "folio",
+    "Fecha": "fecha",
+    "Sello": "sello",
+    "FormaPago": "formapago",
+    "NoCertificado": "nocert",
+    "Certificado": "nocert",
+    "SubTotal": "subtotal",
+    "Descuento": "total",
+    "Moneda": "moneda",
+    "TipoCambio": "tipocambio",
+    "Total": "total",
+    "MetodoPago": "metodopago",
+    "LugarExpedicion": "lugar",
+    "Confirmacion": "total"
+  }
+}
