@@ -156,17 +156,17 @@ def preflight_path(cnx,tbox, mdf, ldf):
         try:
             c=cnx.cursor(); c.execute("EXEC master..xp_fileexist ?", p); row=c.fetchone(); c.close()
             if not (row and row[0]==1):
-                log(tbox,f"      (X) SQL Server NO ve: {p}"); ok=False
+                log(tbox,f" No se adjunto: {p}"); ok=False
             else:
-                log(tbox,f"      (✓) SQL Server ve: {os.path.basename(p)}")
+                log(tbox,f" Adjuntada: {os.path.basename(p)}")
         except Exception:
             pass
     return ok
 
 def attach_by_paths(cnx,tbox, name, mdf, ldf):
-    log(tbox,f"      Prechequeo archivos para [{name}] …")
+    log(tbox,f" checar [{name}] …")
     if not preflight_path(cnx,tbox, mdf, ldf):
-        log(tbox,f"   [{name}] pre-chequeo falló  omito attach"); return False
+        log(tbox,f"   [{name}] falló se omite attach"); return False
     mdf_sql=mdf.replace("/", "\\")
     if ldf:
         ldf_sql=ldf.replace("/", "\\")
@@ -379,8 +379,8 @@ def attach_orphans_from_dest(cnx, tbox, dest_path):
     try:
         files = [f for f in os.listdir(dest_path) if f.lower().endswith(".mdf")]
     except Exception:
-        log(tbox, "   (Plan B) No pude listar DESTINO."); return
-    log(tbox, f"   (Plan B) Buscando orfanas en DESTINO…")
+        log(tbox, "   (Opcion 2) No pude listar DESTINO."); return
+    log(tbox, f"   (Opcion 2) Buscando DESTINO")
     for fn in sorted(files, key=lambda x:x.lower()):
         base = os.path.splitext(fn)[0]
         if base in EXCLUDE_DB_NAMES:
@@ -495,9 +495,9 @@ def action_run(instance_var, origin_var, datapath_var, autocopy_var, check_var, 
         if autocopy_var.get()==1 and origin:
             if not origin.endswith("\\"): origin += "\\"; origin_var.set(origin)
             if os.path.exists(origin): auto_copy_all_data(origin, dest, tbox)
-            else: log(tbox, f"(Aviso) ORIGEN no existe: {origin}, omito copias")
+            else: log(tbox, f"ORIGEN no existe: {origin}, omitir copias")
         elif autocopy_var.get()==1 and not origin:
-            log(tbox, "(Aviso) No se indicó ORIGEN")
+            log(tbox, "No se indicó ORIGEN")
 
         attach_catalogs_in_order(cnx, dest, tbox)
 
@@ -512,10 +512,10 @@ def action_run(instance_var, origin_var, datapath_var, autocopy_var, check_var, 
         ok_m, fail_m = attach_aliases_from_dest(cnx, dest, tbox, comer,  "COMERCIAL")
         ok_a, fail_a = attach_aliases_from_dest(cnx, dest, tbox, addset, "ADJUNTAR MASIVO ADD")
 
-        if not contab: log(tbox, "   (Plan B Contab) Sin alias  adjunto orfanas…"); attach_orphans_from_dest(cnx, tbox, dest)
-        if not nom:    log(tbox, "   (Plan B Nóminas) Sin alias  adjunto orfanas…"); attach_orphans_from_dest(cnx, tbox, dest)
-        if not comer:  log(tbox, "   (Plan B Comercial) Sin alias  adjunto orfanas…"); attach_orphans_from_dest(cnx, tbox, dest)
-        if not addset: log(tbox, "   (Plan B ADD) Sin alias  adjunto orfanas…"); attach_orphans_from_dest(cnx, tbox, dest)
+        if not contab: log(tbox, "   (Opcion 2 Contab) Sin alias  adjunto "); attach_orphans_from_dest(cnx, tbox, dest)
+        if not nom:    log(tbox, "   (Opcion 2 Nóminas) Sin alias  adjunto "); attach_orphans_from_dest(cnx, tbox, dest)
+        if not comer:  log(tbox, "   (Opcion 2 Comercial) Sin alias  adjunto "); attach_orphans_from_dest(cnx, tbox, dest)
+        if not addset: log(tbox, "   (Opcion 2 ADD) Sin alias  adjunto "); attach_orphans_from_dest(cnx, tbox, dest)
 
         log(tbox, "[3/3] Migracion")
         target = server_compat_target(cnx)
@@ -543,10 +543,100 @@ def action_run(instance_var, origin_var, datapath_var, autocopy_var, check_var, 
     finally:
         btn.config(state="normal")
 
-# -------------- GUI --------------
+# =============================
+# Tema claro QCG + Header con logo a la derecha
+# =============================
+try:
+    from PIL import Image, ImageTk
+    _PIL_OK = True
+except Exception:
+    _PIL_OK = False
+
+# Tu logo:
+QCG_LOGO_PATH = r"C:\Users\julio\Documents\Quimarad\Logo.jpg"
+
+def _qcg_create_light_theme(root: tk.Tk):
+    style = ttk.Style(root)
+    try:
+        style.theme_use("clam")
+    except:
+        pass
+
+    # Paleta clara
+    BG="#ffffff"
+    PANEL="#fafafa"
+    BORDER="#e5e7eb"
+    TEXT="#111827"
+    MUTED="#6b7280"
+    ACCENT="#1f2937"
+    BTN_BG="#f3f4f6"
+    BTN_BG_ACTIVE="#e5e7eb"
+
+    root.configure(bg=BG)
+    style.configure("QCG.TFrame", background=BG)
+    style.configure("QCGSection.TLabelframe", background=PANEL, foreground=TEXT, relief="flat", borderwidth=1)
+    style.configure("QCGSection.TLabelframe.Label", background=PANEL, foreground=TEXT, font=("Segoe UI", 11, "bold"))
+    style.configure("QCG.TLabel", background=PANEL, foreground=TEXT, font=("Segoe UI",10))
+    style.configure("QCGMuted.TLabel", background=BG, foreground=MUTED, font=("Segoe UI",9))
+    style.configure("QCG.TEntry", fieldbackground="#ffffff", background="#ffffff", foreground=TEXT, insertcolor=TEXT)
+    style.configure("QCG.TButton", background=BTN_BG, foreground=TEXT, relief="flat", padding=(12,8), font=("Segoe UI Semibold",10))
+    style.map("QCG.TButton", background=[("active", BTN_BG_ACTIVE)])
+
+    def apply_text_style(widget: tk.Text):
+        widget.configure(bg="#ffffff", fg=TEXT, insertbackground=TEXT,
+                         highlightthickness=1, highlightbackground=BORDER, relief="flat")
+    return {"BG":BG,"PANEL":PANEL,"BORDER":BORDER,"TEXT":TEXT,"MUTED":MUTED,"ACCENT":ACCENT,"text_style":apply_text_style}
+
+def qcg_build_header(parent: tk.Widget, colors: dict):
+    # Barra superior
+    bar = tk.Frame(parent, bg=colors["BG"]); bar.pack(fill="x", pady=(0,8))
+    cv = tk.Canvas(bar, height=76, bg=colors["BG"], highlightthickness=0); cv.pack(fill="x")
+
+    def _place_logo():
+        cv.delete("all")
+        w = cv.winfo_width() or cv.winfo_reqwidth()
+        h = cv.winfo_height()
+        margin = 12
+
+        # Título a la izquierda
+        cv.create_text(margin, h//2, text="Migración CONTPAQi", fill=colors["TEXT"],
+                       anchor="w", font=("Segoe UI Semibold", 16))
+
+        # Logo QCG chico arriba-derecha
+        if _PIL_OK and QCG_LOGO_PATH and os.path.exists(QCG_LOGO_PATH):
+            try:
+                img = Image.open(QCG_LOGO_PATH)
+                target_h = 40
+                r = target_h / img.height
+                target_w = int(img.width * r)
+                img = img.resize((target_w, target_h), Image.LANCZOS)
+                tkimg = ImageTk.PhotoImage(img)
+                cv.image = tkimg
+                cv.create_image(w - margin, margin, image=tkimg, anchor="ne")
+            except Exception:
+                # Fallback tipográfico simple
+                cv.create_text(w - 80, h//2, text="QCG", fill=colors["TEXT"], anchor="e", font=("Georgia",18,"bold"))
+        else:
+            cv.create_text(w - 80, h//2, text="QCG", fill=colors["TEXT"], anchor="e", font=("Georgia",18,"bold"))
+
+        # Línea divisoria
+        cv.create_line(0, h-1, w, h-1, fill=colors["BORDER"])
+
+    cv.bind("<Configure>", lambda e: _place_logo())
+    _place_logo()
+
+# =============================
+# GUI
+# =============================
 def main():
-    root=tk.Tk(); root.title(APP_TITLE); root.geometry("1040x820"); root.minsize(1000,760)
-    frm=ttk.Frame(root,padding=10); frm.pack(fill="both", expand=True)
+    root=tk.Tk()
+    theme = _qcg_create_light_theme(root)  # activar tema claro
+    root.title(APP_TITLE); root.geometry("1100x840"); root.minsize(1040,780)
+
+    # Header con logo a la derecha
+    qcg_build_header(root, theme)
+
+    frm=ttk.Frame(root,padding=10, style="QCG.TFrame"); frm.pack(fill="both", expand=True)
 
     instance_var=tk.StringVar(value=DEFAULT_INSTANCE)
     origin_var  =tk.StringVar(value="")
@@ -560,53 +650,67 @@ def main():
     uid_var=tk.StringVar(value="")
     pwd_var=tk.StringVar(value="")
 
-    lf1=ttk.LabelFrame(frm, text="Parámetros de conexión"); lf1.pack(fill="x", padx=4, pady=4)
-    ttk.Label(lf1,text="Instancia SQL:").grid(row=0,column=0,sticky="w",padx=6,pady=6)
-    ttk.Entry(lf1,textvariable=instance_var,width=40).grid(row=0,column=1,sticky="w")
-    ttk.Checkbutton(lf1,text="Usar SQL Authentication (Usuario/Contraseña)",variable=use_sql_auth_var).grid(row=0,column=2,padx=6,pady=6)
-    ttk.Label(lf1,text="Usuario:").grid(row=1,column=0,sticky="w",padx=6)
-    user_entry=ttk.Entry(lf1,textvariable=uid_var,width=32,state="disabled"); user_entry.grid(row=1,column=1,sticky="w")
-    ttk.Label(lf1,text="Contraseña:").grid(row=1,column=2,sticky="e",padx=6)
-    pass_entry=ttk.Entry(lf1,textvariable=pwd_var,width=32,show="*",state="disabled"); pass_entry.grid(row=1,column=3,sticky="w")
+    # Sección 1
+    lf1=ttk.LabelFrame(frm, text="Parámetros de conexión", style="QCGSection.TLabelframe"); lf1.pack(fill="x", padx=6, pady=(4,8))
+    ttk.Label(lf1,text="Instancia SQL:", style="QCG.TLabel").grid(row=0,column=0,sticky="w",padx=8,pady=8)
+    ttk.Entry(lf1,textvariable=instance_var,width=40, style="QCG.TEntry").grid(row=0,column=1,sticky="w")
+    ttk.Checkbutton(lf1,text="Usar SQL Authentication (Usuario/Contraseña)",variable=use_sql_auth_var).grid(row=0,column=2,padx=8,pady=8)
+    ttk.Label(lf1,text="Usuario:", style="QCG.TLabel").grid(row=1,column=0,sticky="w",padx=8)
+    user_entry=ttk.Entry(lf1,textvariable=uid_var,width=32,state="disabled", style="QCG.TEntry"); user_entry.grid(row=1,column=1,sticky="w")
+    ttk.Label(lf1,text="Contraseña:", style="QCG.TLabel").grid(row=1,column=2,sticky="e",padx=8)
+    pass_entry=ttk.Entry(lf1,textvariable=pwd_var,width=32,show="*",state="disabled", style="QCG.TEntry"); pass_entry.grid(row=1,column=3,sticky="w")
+
+    # Ayuda sutil
+    help_conn = ttk.Label(lf1, text="Puedes usar Windows Auth (deja usuario/contraseña en blanco) o SQL Auth habilitando la casilla.",
+                          style="QCG.TLabel")
+    help_conn.grid(row=2, column=0, columnspan=4, sticky="w", padx=8, pady=(0,8))
+
     def _toggle(*_):
         st="normal" if use_sql_auth_var.get()==1 else "disabled"
         user_entry.configure(state=st); pass_entry.configure(state=st)
     use_sql_auth_var.trace_add("write", _toggle)
 
-    lf2=ttk.LabelFrame(frm, text="Carpetas de datos y opciones"); lf2.pack(fill="x", padx=4, pady=4)
-    ttk.Label(lf2,text="Carpeta DATA ORIGEN (vieja):").grid(row=0,column=0,sticky="w",padx=6,pady=6)
-    ttk.Entry(lf2,textvariable=origin_var,width=60).grid(row=0,column=1,sticky="we")
-    ttk.Button(lf2,text="Elegir…",command=lambda: choose_folder(origin_var,"Selecciona carpeta DATA ORIGEN")).grid(row=0,column=2,padx=6)
+    # Sección 2
+    lf2=ttk.LabelFrame(frm, text="Carpetas de datos y opciones", style="QCGSection.TLabelframe"); lf2.pack(fill="x", padx=6, pady=8)
+    ttk.Label(lf2,text="Carpeta DATA ORIGEN (vieja):", style="QCG.TLabel").grid(row=0,column=0,sticky="w",padx=8,pady=8)
+    ttk.Entry(lf2,textvariable=origin_var,width=60, style="QCG.TEntry").grid(row=0,column=1,sticky="we")
+    ttk.Button(lf2,text="Elegir…",command=lambda: choose_folder(origin_var,"Selecciona carpeta DATA ORIGEN"), style="QCG.TButton").grid(row=0,column=2,padx=8)
 
-    ttk.Label(lf2,text="Carpeta DATA DESTINO (instancia):").grid(row=1,column=0,sticky="w",padx=6,pady=6)
-    ttk.Entry(lf2,textvariable=datapath_var,width=60).grid(row=1,column=1,sticky="we")
-    ttk.Button(lf2,text="Elegir…",command=lambda: choose_folder(datapath_var,"Selecciona carpeta DATA DESTINO")).grid(row=1,column=2,padx=6)
+    ttk.Label(lf2,text="Carpeta DATA DESTINO (instancia):", style="QCG.TLabel").grid(row=1,column=0,sticky="w",padx=8,pady=8)
+    ttk.Entry(lf2,textvariable=datapath_var,width=60, style="QCG.TEntry").grid(row=1,column=1,sticky="we")
+    ttk.Button(lf2,text="Elegir…",command=lambda: choose_folder(datapath_var,"Selecciona carpeta DATA DESTINO"), style="QCG.TButton").grid(row=1,column=2,padx=8)
 
-    ttk.Checkbutton(lf2,text="Copiar TODO (*.mdf/*.ldf/*.ndf) desde ORIGEN (sin sobrescribir)",variable=autocopy_var).grid(row=0,column=3,padx=6)
-    ttk.Checkbutton(lf2,text="CHECKDB ",variable=check_var).grid(row=1,column=3,padx=6)
-    ttk.Checkbutton(lf2,text="Verificar conversión al finalizar",variable=verify_var).grid(row=1,column=4,padx=6)
-    ttk.Checkbutton(lf2,text="No leer ERRORLOG en fallos de attach (más rápido)",variable=skip_errorlog_var).grid(row=0,column=4,padx=6)
+    opts = ttk.Frame(lf2, style="QCG.TFrame"); opts.grid(row=0, column=3, rowspan=2, padx=8, pady=4, sticky="n")
+    ttk.Checkbutton(opts,text="Copiar DATA anterior (sin sobrescribir)",variable=autocopy_var).pack(anchor="w", pady=2)
+    ttk.Checkbutton(opts,text="Ejecutar CHECKDB rápido",variable=check_var).pack(anchor="w", pady=2)
+    ttk.Checkbutton(opts,text="Verificar conversión al finalizar",variable=verify_var).pack(anchor="w", pady=2)
+    ttk.Checkbutton(opts,text="Omitir lectura de ERRORLOG",variable=skip_errorlog_var).pack(anchor="w", pady=2)
 
     for i in range(6): lf2.grid_columnconfigure(i,weight=0)
     lf2.grid_columnconfigure(1,weight=1)
 
-    btns=ttk.Frame(frm); btns.pack(fill="x", pady=6)
+    # Botones
+    btns=ttk.Frame(frm, style="QCG.TFrame"); btns.pack(fill="x", pady=8)
     btn_test=ttk.Button(btns,text="Probar conexión",
-        command=lambda: test_connection(instance_var, use_sql_auth_var, uid_var, pwd_var, datapath_var, tbox))
-    btn_test.pack(side="left", padx=4)
+        command=lambda: test_connection(instance_var, use_sql_auth_var, uid_var, pwd_var, datapath_var, tbox),
+        style="QCG.TButton")
+    btn_test.pack(side="left", padx=6)
 
     btn_run=ttk.Button(btns,text="Adjuntar + Convertir (forzando queries)",
         command=lambda: action_run(instance_var, origin_var, datapath_var, autocopy_var,
                                    check_var, verify_var, use_sql_auth_var, uid_var, pwd_var,
-                                   skip_errorlog_var, tbox, btn_run))
-    btn_run.pack(side="left", padx=4)
+                                   skip_errorlog_var, tbox, btn_run),
+        style="QCG.TButton")
+    btn_run.pack(side="left", padx=6)
 
-    lf3=ttk.LabelFrame(frm,text="Log"); lf3.pack(fill="both", expand=True, padx=4, pady=4)
+    # Log
+    lf3=ttk.LabelFrame(frm,text="Log de ejecución", style="QCGSection.TLabelframe"); lf3.pack(fill="both", expand=True, padx=6, pady=(8,6))
     global tbox
-    tbox=tk.Text(lf3,height=28,wrap="word"); tbox.pack(fill="both", expand=True, padx=6, pady=6)
+    tbox=tk.Text(lf3,height=28,wrap="word"); tbox.pack(fill="both", expand=True, padx=10, pady=10)
     tbox.configure(font=("Consolas",10))
+    theme["text_style"](tbox)
 
-    status=ttk.Label(root,text="Listo.",anchor="w"); status.pack(fill="x")
+    status=ttk.Label(root,text="Listo.",anchor="w", style="QCGMuted.TLabel"); status.pack(fill="x", padx=8, pady=(0,6))
     root.mainloop()
 
 if __name__=="__main__":
