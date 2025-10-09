@@ -1,4 +1,4 @@
-# ui/theme.py
+
 import os
 import colorsys
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ from tkinter import ttk
 try:
     from PIL import Image
 except Exception:
-    Image = None  # PIL opcional (recomendado)
+    Image = None
 
 
 @dataclass
@@ -58,7 +58,6 @@ def _dominant_color(path: Optional[str]) -> Optional[Tuple[int, int, int]]:
         for r, g, b, a in img.getdata():
             if a < 8:
                 continue
-            # ignorar blancos muy puros
             if r > 245 and g > 245 and b > 245:
                 continue
             counts[(r, g, b)] = counts.get((r, g, b), 0) + 1
@@ -67,7 +66,6 @@ def _dominant_color(path: Optional[str]) -> Optional[Tuple[int, int, int]]:
 
         def weight(item):
             (r, g, b), cnt = item
-            # favorecer un poco saturación, pero permitir monocromos (logo negro)
             h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
             return cnt * (0.6 + 0.5 * s) + (1.0 - v) * 5  # leve sesgo a tonos oscuros
         (r, g, b), _ = max(counts.items(), key=weight)
@@ -80,10 +78,8 @@ def _build_palette(logo_path: Optional[str]) -> Palette:
     dom = _dominant_color(logo_path)
 
     if dom is None:
-        # Fallback MONOCROMO elegante (negro/grises) cuando no hay logo
-        dom = (17, 17, 17)  # #111
+        dom = (17, 17, 17)
 
-    # Si el color es muy poco saturado, lo tratamos como MONOCROMO (ideal para tu logo negro)
     r, g, b = dom
     h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
     is_monochrome = s < 0.12  # baja saturación ~ escala de grises
@@ -203,5 +199,4 @@ def apply_theme(root: tk.Tk, logo_path: Optional[str] = None):
     root.option_add("*Text.Foreground", pal.text)
     root.option_add("*Button.Font", base_font_bold)
 
-    # Exponer paleta si la quieres usar
-    root._theme_palette = pal  # type: ignore[attr-defined]
+    root._theme_palette = pal  
