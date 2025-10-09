@@ -1,5 +1,7 @@
 import os
 import sys
+import zipfile
+import threading
 import datetime as _dt
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -46,7 +48,6 @@ class App(tk.Tk):
         super().__init__()
 
         try:
-           
             if hasattr(sys, "_MEIPASS"):
                 icon_candidate = resource_path("logo.ico")
                 logo_candidate = resource_path("logo.jpg")
@@ -202,9 +203,10 @@ class App(tk.Tk):
             actions,
             text="Iniciar copia",
             style="Accent.TButton",
-            command=self._run_copy_flow,
+            command=self._run_copy_flow,  
         ).pack(side="left")
-
+        
+        
         logf = ttk.Frame(page)
         logf.pack(fill="both", expand=True, padx=16, pady=(4, 16))
         ttk.Label(logf, text="Log (Copia DATA/Empresas)").pack(anchor="w")
@@ -286,65 +288,128 @@ class App(tk.Tk):
         return _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
     def _mlog(self, msg: str):
-        self.m_log.insert("end", msg + "\n")
-        self.m_log.see("end")
-        self.update_idletasks()
+        def _do():
+            self.m_log.insert("end", msg + "\n")
+            self.m_log.see("end")
+        self.after(0, _do)
 
     def _alog(self, msg: str):
-        self.a_log.insert("end", msg + "\n")
-        self.a_log.see("end")
-        self.update_idletasks()
+        def _do():
+            self.a_log.insert("end", msg + "\n")
+            self.a_log.see("end")
+        self.after(0, _do)
+
+    def _zip_dir(self, src_dir: str, zip_path: str):
+        
+        self._mlog(f"> Preparando ZIP: {zip_path}")
+        with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            base_len = len(src_dir.rstrip("\\/")) + 1
+            for root, _, files in os.walk(src_dir):
+                for fname in files:
+                    fpath = os.path.join(root, fname)
+                    arcname = fpath[base_len:]
+                    try:
+                        zf.write(fpath, arcname)
+                    except Exception as ex:
+                        self._mlog(f" No se pudo agregar: {arcname} — {ex}")
+        self._mlog("  [OK] ZIP finalizado.")
+
+    def _run_zip_flow(self):
+        def worker():
+            instance = self.m_instance.get().strip()
+            data_src = self.m_data_src.get().strip()
+            root_dst = self.m_root_dst.get().strip()
+
+            if not instance:
+                messagebox.showwarning("Instancia", "Indica la instancia"); return
+            if not data_src or not os.path.isdir(data_src):
+                messagebox.showwarning("DATA ORIGEN", "Selecciona una carpeta válida"); return
+            if not root_dst:
+                messagebox.showwarning("Migracion", "Indica carpeta raíz para 'Migracion'."); return
+
+            os.makedirs(root_dst, exist_ok=True)
+            zip_path = os.path.join(root_dst, f"DATA_{self._tstamp()}.zip")
+
+            try:
+                svc = service_name_from_instance(instance)
+                self._mlog(f"> Deteniendo servicio {svc} (requiere admin)")
+                out = stop_service(svc); self._mlog(out)
+            except SysOpError as ex:
+                self._mlog(f"[ERROR] Servicio: {ex}"); messagebox.showerror("Servicio", str(ex)); return
+
+            try:
+                self._mlog(f"> Comprimiendo DATA origen a ZIP: {zip_path}")
+                self._zip_dir(data_src, zip_path)
+            except Exception as ex:
+                self._mlog(f"[ERROR] ZIP: {ex}")
+                messagebox.showerror("ZIP", str(ex))
+
+            try:
+                svc = service_name_from_instance(instance)
+                self._mlog(f"> Iniciando servicio {svc}")
+                out = start_service(svc); self._mlog(out)
+            except SysOpError as ex:
+                self._mlog(f"[ERROR] Servicio: {ex}"); messagebox.showerror("Servicio", str(ex)); return
+
+            self._mlog(f" ZIP listo: {zip_path}")
+            messagebox.showinfo("ZIP", f"Listo. Archivo:\n{zip_path}")
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _run_copy_flow(self):
-        instance = self.m_instance.get().strip()
-        data_src = self.m_data_src.get().strip()
-        emp_src = self.m_emp_src.get().strip()
-        root_dst = self.m_root_dst.get().strip()
 
-        if not instance:
-            messagebox.showwarning("Instancia", "Indica la instancia"); return
-        if not data_src or not os.path.isdir(data_src):
-            messagebox.showwarning("DATA ORIGEN", "Selecciona una carpeta válida"); return
-        if not emp_src or not os.path.isdir(emp_src):
-            messagebox.showwarning("Empresas (origen)", "Selecciona una carpeta válida"); return
-        if not root_dst:
-            messagebox.showwarning("Migracion", "Indica carpeta raíz para 'Migracion'."); return
+        def worker():
+            instance = self.m_instance.get().strip()
+            data_src = self.m_data_src.get().strip()
+            emp_src = self.m_emp_src.get().strip()
+            root_dst = self.m_root_dst.get().strip()
 
-        os.makedirs(root_dst, exist_ok=True)
-        data_dst = os.path.join(root_dst, f"DATA_{self._tstamp()}")
-        emp_dst  = os.path.join(root_dst, f"Empresas_{self._tstamp()}")
-        os.makedirs(data_dst, exist_ok=True)
-        os.makedirs(emp_dst, exist_ok=True)
+            if not instance:
+                messagebox.showwarning("Instancia", "Indica la instancia"); return
+            if not data_src or not os.path.isdir(data_src):
+                messagebox.showwarning("DATA ORIGEN", "Selecciona una carpeta válida"); return
+            if not emp_src or not os.path.isdir(emp_src):
+                messagebox.showwarning("Empresas (origen)", "Selecciona una carpeta válida"); return
+            if not root_dst:
+                messagebox.showwarning("Migracion", "Indica carpeta raíz para 'Migracion'."); return
 
-        try:
-            svc = service_name_from_instance(instance)
-            self._mlog(f"> Deteniendo servicio {svc} (requiere admin)")
-            out = stop_service(svc); self._mlog(out)
-        except SysOpError as ex:
-            self._mlog(f"[ERROR] Servicio: {ex}"); messagebox.showerror("Servicio", str(ex)); return
+            os.makedirs(root_dst, exist_ok=True)
+            zip_path = os.path.join(root_dst, f"DATA_{self._tstamp()}.zip")
+            emp_dst  = os.path.join(root_dst, f"Empresas_{self._tstamp()}")
+            os.makedirs(emp_dst, exist_ok=True)
 
-        try:
-            self._mlog(f"> ROBOCOPY DATA (con archivos): {data_src}    {data_dst}")
-            out = robocopy(data_src, data_dst, ["/E"]); self._mlog(out)
-        except Exception as ex:
-            self._mlog(f"[ERROR] ROBOCOPY DATA: {ex}"); messagebox.showerror("ROBOCOPY DATA", str(ex))
+            try:
+                svc = service_name_from_instance(instance)
+                self._mlog(f"> Deteniendo servicio {svc} (requiere admin)")
+                out = stop_service(svc); self._mlog(out)
+            except SysOpError as ex:
+                self._mlog(f"[ERROR] Servicio: {ex}"); messagebox.showerror("Servicio", str(ex)); return
 
-        try:
-            self._mlog(f"> ROBOCOPY Empresas (estructura): {emp_src}    {emp_dst}")
-            out = robocopy(emp_src, emp_dst, ["/E", "/XF", "*.*"]); self._mlog(out)
-        except Exception as ex:
-            self._mlog(f"[ERROR] ROBOCOPY Empresas: {ex}"); messagebox.showerror("ROBOCOPY Empresas", str(ex))
+            try:
+                self._mlog(f"> Comprimiendo DATA a ZIP: {zip_path}")
+                self._zip_dir(data_src, zip_path)
+            except Exception as ex:
+                self._mlog(f"[ERROR] ZIP DATA: {ex}")
+                messagebox.showerror("ZIP DATA", str(ex))
 
-        try:
-            svc = service_name_from_instance(instance)
-            self._mlog(f"> Iniciando servicio {svc}")
-            out = start_service(svc); self._mlog(out)
-        except SysOpError as ex:
-            self._mlog(f"[ERROR] Servicio: {ex}"); messagebox.showerror("Servicio", str(ex)); return
+            try:
+                self._mlog(f"> ROBOCOPY Empresas (estructura): {emp_src}    {emp_dst}")
+                out = robocopy(emp_src, emp_dst, ["/E", "/XF", "*.*"]); self._mlog(out)
+            except Exception as ex:
+                self._mlog(f"[ERROR] ROBOCOPY Empresas: {ex}"); messagebox.showerror("ROBOCOPY Empresas", str(ex))
 
-        self._mlog(f"✓ Migración lista. Carpeta raíz: {root_dst}")
-        messagebox.showinfo("Migración", f"Listo. Revisa:\n{root_dst}")
+            try:
+                svc = service_name_from_instance(instance)
+                self._mlog(f"> Iniciando servicio {svc}")
+                out = start_service(svc); self._mlog(out)
+            except SysOpError as ex:
+                self._mlog(f"[ERROR] Servicio: {ex}"); messagebox.showerror("Servicio", str(ex)); return
 
+            self._mlog(f" Proceso terminado {zip_path}\n  Empresas {emp_dst}")
+            messagebox.showinfo("Migración", f"Listo.\nZIP DATA:\n{zip_path}\n\nEmpresas:\n{emp_dst}")
+
+        threading.Thread(target=worker, daemon=True).start()
+    
     def _test_conn_attach(self):
         inst = self.a_instance.get().strip()
         if not inst:
@@ -406,7 +471,7 @@ class App(tk.Tk):
                 run_tsql(conn, tsql_checkdb_all(quick=True))
                 self._alog("  [OK] CHECKDB finalizado.")
 
-            self._alog("✓ Proceso finalizado.")
+            self._alog(" Proceso finalizado.")
             messagebox.showinfo("Adjuntar", "Copia, adjuntos/queries y CHECKDB completados.")
         except Exception as ex:
             self._alog(f"[ERROR] Adjuntar: {ex}"); messagebox.showerror("Adjuntar", str(ex))
