@@ -1,11 +1,7 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# File: core/paths.py
-# ─────────────────────────────────────────────────────────────────────────────
 import os, sys
 
 
 def resource_path(relative_path: str) -> str:
-    """Resuelve rutas compatible con PyInstaller."""
     try:
         base_path = sys._MEIPASS  # type: ignore[attr-defined]
     except Exception:

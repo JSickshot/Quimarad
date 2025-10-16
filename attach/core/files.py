@@ -1,38 +1,19 @@
-# core/files.py
-import os, shutil
-from typing import Iterable
+import os
+import shutil
 
-ALLOWED_EXT = {".mdf", ".ldf"}
-BLOCKLIST = {  # nunca copiar DBs de sistema
-    "master.mdf", "mastlog.ldf",
-    "model.mdf", "modellog.ldf",
-    "msdbdata.mdf", "msdblog.ldf",
-    "tempdb.mdf", "templog.ldf",
-}
+def copy_data_tree(src_dir: str, dst_dir: str, skip_existing: bool = True):
 
-def ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
-
-def iter_db_files(src_dir: str) -> Iterable[str]:
-    for name in os.listdir(src_dir):
-        lower = name.lower()
-        if lower in (b.lower() for b in BLOCKLIST):
-            continue
-        _, ext = os.path.splitext(name)
-        if ext.lower() in ALLOWED_EXT:
-            yield os.path.join(src_dir, name)
-
-def copy_data_tree(src_dir: str, dst_dir: str, *, skip_existing: bool = True) -> list[tuple[str, str]]:
-    """
-    Copia .mdf/.ldf del origen al destino (excluye DB de sistema).
-    Si skip_existing=True no sobrescribe. Retorna lista de (src, dst).
-    """
-    ensure_dir(dst_dir)
-    copied: list[tuple[str, str]] = []
-    for src in iter_db_files(src_dir):
-        dst = os.path.join(dst_dir, os.path.basename(src))
-        if skip_existing and os.path.exists(dst):
-            continue
-        shutil.copy2(src, dst)
-        copied.append((src, dst))
+    os.makedirs(dst_dir, exist_ok=True)
+    copied = []
+    for root, _, files in os.walk(src_dir):
+        for name in files:
+            lower = name.lower()
+            if not (lower.endswith(".mdf") or lower.endswith(".ldf")):
+                continue
+            src_path = os.path.join(root, name)
+            dst_path = os.path.join(dst_dir, name)
+            if skip_existing and os.path.exists(dst_path):
+                continue
+            shutil.copy2(src_path, dst_path)
+            copied.append((src_path, dst_path))
     return copied
