@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['Evidencia.py'],
+    ['evidencia.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=['customtkinter','tkinter'],
+    datas=[('logo.png', '.')],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Evidencia',
+    name='evidencia',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['logo.ico'],
 )
