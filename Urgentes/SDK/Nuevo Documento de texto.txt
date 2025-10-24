@@ -1,0 +1,1 @@
+py -3.11-32 -m PyInstaller --noconfirm --noconsole --onefile app.py
