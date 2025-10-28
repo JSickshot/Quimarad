@@ -2,6 +2,12 @@ import os, ctypes
 from ctypes import c_int, c_char_p, c_long, create_string_buffer, byref
 from pathlib import Path
 
+from .loader import ComercialSDK, get_sdk, SDKError
+
+
+__all__ = ["ComercialSDK", "get_sdk", "SDKError"]
+
+
 DLL_NAME = "MGWServicios.dll"
 
 class ComercialSDK:

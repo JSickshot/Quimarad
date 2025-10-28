@@ -1,155 +1,148 @@
 # sdk/loader.py
 # -*- coding: utf-8 -*-
-import os
-from pathlib import Path
-from .comercial import ComercialSDK, DLL_NAME
+import os, sys, ctypes
+from ctypes import c_int, c_char_p, c_long, create_string_buffer
 
-def _app_dir() -> Path:
-    import sys
-    return Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
+class SDKError(RuntimeError):
+    pass
 
-APP_DIR = _app_dir()
-
-# Rutas típicas
-CANDIDATE_DLL_DIRS = [
-    str(APP_DIR),
-    str(APP_DIR / "compac_sdk"),
+DEFAULT_DIRS = [
     r"C:\Program Files (x86)\Compac\COMERCIAL",
-    r"C:\Compac\COMERCIAL",
-    r"C:\Compac\Comercial",
-]
-CANDIDATE_CAC_DIRS = [
-    str(APP_DIR),
-    str(APP_DIR / "compac_sdk"),
-    r"C:\ProgramData\Compac\CAC",
-    r"C:\Windows",
-    r"C:\Program Files (x86)\Compac\COMERCIAL",
-    r"C:\Compac\COMERCIAL",
-    r"C:\Compac\Comercial",
-]
-CANDIDATE_PAQ_NAMES = [
-    b"CONTPAQ I COMERCIAL",
-    b"CONTPAQ I Comercial",
-    b"CONTPAQ i Comercial",
+    r"C:\Program Files\Compac\COMERCIAL",
 ]
 
-def _has_dll(d: str) -> bool:
+def _add_dll_dir(path: str):
+    if not path or not os.path.isdir(path):
+        return None
+    # Py3.8+: asegura que Windows busque dependencias en esta carpeta
     try:
-        return (Path(d) / DLL_NAME).is_file()
+        return os.add_dll_directory(path)  # devuelve un handle que hay que retener
     except Exception:
-        return False
-
-# ---------- NUEVO: búsqueda global de CAC.ini ----------
-def _list_fixed_roots():
-    roots = []
-    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-        p = Path(f"{letter}:\\")
-        if p.exists():
-            roots.append(p)
-    return roots
-
-def _find_cac_ini_global(max_hits: int = 3):
-    """
-    Busca CAC.ini de forma global:
-    1) en rutas típicas/rápidas
-    2) si no aparece, recorre TODOS los discos (C:\, D:\, ...) con poda:
-       - Solo nombres exactos 'CAC.ini' (case-insensitive)
-       - Evita carpetas muy ruidosas donde no suele estar (Windows\WinSxS, $Recycle.Bin, etc.)
-    Devuelve lista de rutas encontradas (orden de hallazgo).
-    """
-    # primero, típicas
-    hits = []
-    for base in CANDIDATE_CAC_DIRS:
-        p = Path(base) / "CAC.ini"
-        if p.is_file():
-            hits.append(str(p))
-            if len(hits) >= max_hits:
-                return hits
-
-    # segundo, variable de entorno si contiene una carpeta (para completarla)
-    env = os.environ.get("COMPAC_CAC_INI")
-    if env and Path(env).is_file():
-        hits.append(env)
-        if len(hits) >= max_hits:
-            return hits
-
-    # tercero, rastreo global por discos
-    SKIP_DIR_NAMES = {
-        "Windows", "WinSxS", "Installer", "Temp", "ProgramData\\Package Cache",
-        "$Recycle.Bin", "AppData", "Program Files", "Program Files (x86)", "node_modules",
-        "System Volume Information"
-    }
-    roots = _list_fixed_roots()
-    for root in roots:
-        # rutas probables dentro de cada disco
-        quick = [
-            root / "Compac",
-            root / "ProgramData" / "Compac",
-            root / "Program Files (x86)" / "Compac",
-            root / "Program Files" / "Compac",
-            root / "Windows",
-        ]
-        for q in quick:
-            p = q / "CAC.ini"
-            if p.is_file():
-                hits.append(str(p))
-                if len(hits) >= max_hits:
-                    return hits
-
-        # caminata podada
+        # fallback Win7/py<3.8
         try:
-            for base, dirs, files in os.walk(root, topdown=True):
-                # poda de directorios ruidosos
-                dirs[:] = [d for d in dirs if all(skip not in os.path.join(base, d) for skip in SKIP_DIR_NAMES)]
-                if "CAC.ini" in files:
-                    hits.append(os.path.join(base, "CAC.ini"))
-                    if len(hits) >= max_hits:
-                        return hits
+            ctypes.windll.kernel32.SetDllDirectoryW(path)
+            return path  # “handle” sintético
         except Exception:
-            # algunos volúmenes protegidos pueden fallar: ignorar
-            pass
+            return None
 
-    return hits
+class ComercialSDK:
+    def __init__(self, dll_dir: str = None, paq_name: bytes = b"CONTPAQ I Comercial"):
+        self.dll_dir = dll_dir
+        self.paq_name = paq_name
+        self.dll = None
+        self._errbuf = create_string_buffer(512)
+        self._dll_dir_handle = None
 
-def _choose_cac_ini() -> str | None:
-    # 1) variable de entorno explícita
-    env = os.environ.get("COMPAC_CAC_INI")
-    if env and Path(env).is_file():
-        return env
-    # 2) típicas + global
-    hits = _find_cac_ini_global(max_hits=1)
-    return hits[0] if hits else None
+    def _pick_dir(self) -> str:
+        # 1) argumento o variable de entorno
+        cands = []
+        if self.dll_dir: cands.append(self.dll_dir)
+        env = os.environ.get("COMPAC_SDK_DIR")
+        if env: cands.append(env)
 
-def get_sdk() -> ComercialSDK:
-    # Localizar CAC.ini de forma automática (global si es necesario)
-    cac = _choose_cac_ini()
-    if cac:
+        # 2) carpeta junto al EXE: .\compac_sdk
         try:
-            os.chdir(Path(cac).parent)  # SDK espera CWD donde vive CAC.ini
+            base = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else __file__)
         except Exception:
-            pass
+            base = os.getcwd()
+        cands.append(os.path.join(base, "compac_sdk"))
 
-    # localizar DLL del SDK
-    dll_dirs = []
-    env_dll = os.environ.get("COMPAC_SDK_DIR")
-    if env_dll:
-        dll_dirs.append(env_dll)
-    dll_dirs += CANDIDATE_DLL_DIRS
-    dll_dirs = [d for d in dll_dirs if d and _has_dll(d)]
+        # 3) rutas típicas
+        cands += DEFAULT_DIRS
 
-    last_err = None
-    for d in dll_dirs:
-        for paq in CANDIDATE_PAQ_NAMES:
-            try:
-                sdk = ComercialSDK(d, paq)
-                sdk.load()
-                return sdk
-            except Exception as e:
-                last_err = f"{d} / {paq!r}: {e}"
+        # 4) cualquiera que contenga MGWSERVICIOS.DLL
+        for p in cands:
+            dll = os.path.join(p, "MGWSERVICIOS.DLL")
+            if os.path.isfile(dll):
+                return p
+        return ""
 
-    raise RuntimeError(
-        "No se pudo cargar MGWSERVICIOS.DLL.\n"
-        "Verifica EXE/Python 32-bit, VC++ x86, CAC.ini y rutas del SDK.\n"
-        f"Último intento: {last_err or 'sin detalles'}\n"
-        f"CAC.ini usado: {cac or 'no encontrado'}"
-    )
+    def load(self):
+        dll_dir = self._pick_dir()
+        if not dll_dir:
+            raise SDKError(
+                "No se encontró MGWSERVICIOS.DLL.\n\nOpciones:\n"
+                " • Copia toda la carpeta del SDK (COMERCIAL) junto al EXE en .\\compac_sdk\n"
+                " • O define la variable de entorno COMPAC_SDK_DIR apuntando a la carpeta del SDK\n"
+                " • O instala CONTPAQi Comercial en su ruta por defecto."
+            )
+
+        # MUY IMPORTANTE para ejecutables 'frozen' (PyInstaller one-file)
+        self._dll_dir_handle = _add_dll_dir(dll_dir)
+
+        # Cambiamos el CWD para DLL con rutas relativas internas
+        try: os.chdir(dll_dir)
+        except Exception: pass
+
+        try:
+            self.dll = ctypes.WinDLL(os.path.join(dll_dir, "MGWSERVICIOS.DLL"))
+        except Exception as e:
+            raise SDKError(
+                f"No se pudo cargar MGWSERVICIOS.DLL ({dll_dir}).\n"
+                f"Detalle original: {e}\n\n"
+                "Si estás usando un EXE one-file, asegúrate de:\n"
+                " 1) Ejecutar en 32 bits (SDK es x86)\n"
+                " 2) Tener todas las dependencias en la MISMA carpeta (MGW000.DLL, etc.)\n"
+                " 3) Haber agregado la carpeta con os.add_dll_directory (este loader ya lo hace)")
+
+        # binding
+        self._bind("fSetNombrePAQ", c_int, [c_char_p])
+        self._bind("fAbreEmpresa",  c_int, [c_char_p])
+        self._bind("fCierraEmpresa", c_int, [])
+        self._bind("fTerminaSDK", c_int, [])
+        self._bind("fError", c_int, [c_int, c_char_p, c_int])
+        self._bind("fInicioSesionSDK", c_int, [c_char_p, c_char_p], optional=True)
+
+        self._bind("fSetDatoDocumento", c_int, [c_char_p, c_char_p])
+        self._bind("fAltaDocumento", c_int, [ctypes.POINTER(c_long), ctypes.c_void_p])
+        self._bind("fGuardaDocumento", c_int, [])
+        self._bind("fCancelaDocumento", c_int, [], optional=True)
+
+        self._bind("fSetDatoMovimiento", c_int, [c_char_p, c_char_p])
+        self._bind("fAltaMovimiento", c_int, [c_long, ctypes.POINTER(c_long), ctypes.c_void_p])
+
+        self._chk(self.dll.fSetNombrePAQ(self.paq_name), "fSetNombrePAQ")
+
+    def _bind(self, name, restype, args=None, optional=False):
+        try:
+            fn = getattr(self.dll, name)
+        except AttributeError:
+            if optional: return
+            raise SDKError(f"La función {name} no existe en esta DLL")
+        fn.restype = restype
+        if args is not None:
+            fn.argtypes = args
+
+    def _errmsg(self, code: int) -> str:
+        self._errbuf = create_string_buffer(512)
+        try:
+            self.dll.fError(code, self._errbuf, 512)
+            return self._errbuf.value.decode("latin-1", "ignore")
+        except Exception:
+            return f"Error {code}"
+
+    def _chk(self, code: int, ctx: str):
+        if code != 0:
+            raise SDKError(f"{ctx} | SDK({code}): {self._errmsg(code)}")
+
+    def login(self, user: str, pwd: str):
+        fn = getattr(self.dll, "fInicioSesionSDK", None)
+        if fn:
+            self._chk(fn(user.encode("latin-1"), pwd.encode("latin-1")), "fInicioSesionSDK")
+
+    def abre_empresa(self, ruta: str):
+        self._chk(self.dll.fAbreEmpresa(ruta.encode("latin-1")), f"Abrir empresa: {ruta}")
+
+    def cierra_empresa(self):
+        try: self.dll.fCierraEmpresa()
+        except Exception: pass
+
+    def terminar(self):
+        try: self.dll.fTerminaSDK()
+        except Exception: pass
+
+
+def get_sdk(dll_dir: str = None, paq_name: bytes = b"CONTPAQ I Comercial"):
+    sdk = ComercialSDK(dll_dir, paq_name)
+    sdk.load()
+    return sdk
