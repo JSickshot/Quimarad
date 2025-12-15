@@ -1,199 +1,121 @@
-import os, ctypes
-from ctypes import c_int, c_char_p, c_long, create_string_buffer, byref
-from pathlib import Path
+# -*- coding: utf-8 -*-
+import os
+import ctypes as C
 
-from .loader import ComercialSDK, get_sdk, SDKError
+# Constantes CONTPAQ i COMERCIAL
+PAQ_NAME = "CONTPAQ I COMERCIAL"  # fSetNombrePAQ
 
+# Tipos básicos
+c_long  = C.c_long
+c_int   = C.c_int
+c_charp = C.c_char_p
 
-__all__ = ["ComercialSDK", "get_sdk", "SDKError"]
+def _ansi(s: str) -> bytes:
+    # La DLL espera ANSI/Latin-1 en la mayoría de builds
+    return (s or "").encode("latin-1", errors="ignore")
 
+class ComercialDLL:
+    """
+    Wrapper mínimo y seguro de MGWSERVICIOS.DLL para lo que usa la app:
+      - fSetNombrePAQ
+      - fInicioSesionSDK / fTerminaSesionSDK
+      - fAbreEmpresa / fCierraEmpresa
+      - fError (texto)
+      - fBuscaIdConcepto (por código)
+      - fSiguienteFolio (por Id + serie)
+    """
 
-DLL_NAME = "MGWServicios.dll"
+    def __init__(self, dll_path: str):
+        if not os.path.isfile(dll_path):
+            raise FileNotFoundError(f"No existe MGWSERVICIOS.DLL en: {dll_path}")
+        self._dll = C.WinDLL(dll_path)
 
-class ComercialSDK:
-    def __init__(self, dll_dir: str, paq_name: bytes):
-        self.dll_dir = dll_dir
-        self.paq_name = paq_name
-        self.dll = None
-        self._fns = {}
-        self._err = create_string_buffer(512)
-        self.loaded = False
+        # ---- Prototipos críticos ----
+        # long fSetNombrePAQ(char* aNombrePaq);
+        self._dll.fSetNombrePAQ.argtypes = [c_charp]
+        self._dll.fSetNombrePAQ.restype  = c_long
 
-    def _bind(self, name, restype=c_int, argtypes=None, optional=False):
+        # long fInicioSesionSDK();
+        self._dll.fInicioSesionSDK.argtypes = []
+        self._dll.fInicioSesionSDK.restype  = c_long
+
+        # long fTerminaSesionSDK();
+        self._dll.fTerminaSesionSDK.argtypes = []
+        self._dll.fTerminaSesionSDK.restype  = c_long
+
+        # long fAbreEmpresa(char* aRutaEmpresa);
+        self._dll.fAbreEmpresa.argtypes = [c_charp]
+        self._dll.fAbreEmpresa.restype  = c_long
+
+        # long fCierraEmpresa();
+        self._dll.fCierraEmpresa.argtypes = []
+        self._dll.fCierraEmpresa.restype  = c_long
+
+        # long fError(long aCodigo, char* aMensaje, int aLen);
+        self._dll.fError.argtypes = [c_long, c_charp, c_int]
+        self._dll.fError.restype  = c_long
+
+        # long fBuscaIdConcepto(char* cCodigoConcepto, int* pIdConcepto);
+        self._dll.fBuscaIdConcepto.argtypes = [c_charp, C.POINTER(c_int)]
+        self._dll.fBuscaIdConcepto.restype  = c_long
+
+        # long fSiguienteFolio(int aIdConceptoDocumento, char* aSerie, long* aFolio);
+        self._dll.fSiguienteFolio.argtypes  = [c_int, c_charp, C.POINTER(c_long)]
+        self._dll.fSiguienteFolio.restype   = c_long
+
+        # ---- Sesión estándar ----
+        rc = self._dll.fSetNombrePAQ(_ansi(PAQ_NAME))
+        if rc != 0:
+            raise RuntimeError(f"fSetNombrePAQ rc={rc}")
+        rc = self._dll.fInicioSesionSDK()
+        if rc != 0:
+            raise RuntimeError(f"fInicioSesionSDK rc={rc}")
+
+    # --------- API de alto nivel usada por app.py ----------
+    def open_company(self, empresa_path: str) -> int:
+        """Abre empresa (ruta AD*). Devuelve rc."""
+        return int(self._dll.fAbreEmpresa(_ansi(empresa_path)))
+
+    def close_company(self) -> int:
         try:
-            fn = getattr(self.dll, name)
-            if argtypes is not None:
-                fn.argtypes = argtypes
-            fn.restype = restype
-            self._fns[name] = fn
-        except AttributeError:
-            if not optional: raise
-            self._fns[name] = None
+            return int(self._dll.fCierraEmpresa())
+        except Exception:
+            return 0
 
-    def _call(self, name, *args):
-        fn = self._fns.get(name)
-        if fn is None:
-            raise RuntimeError(f"Función {name} no disponible en DLL")
-        return fn(*args)
-
-    def _error_text(self, code: int) -> str:
-        self._err = create_string_buffer(512)
-        if self._fns.get('fError'):
-            self._call('fError', code, self._err, 512)
-            return self._err.value.decode('latin-1', 'ignore')
-        return ""
-
-    def _check(self, code: int, ctx: str):
-        if code != 0:
-            raise RuntimeError(f"{ctx} | SDK({code}): {self._error_text(code)}")
-
-    def load(self):
-        dll_path = Path(self.dll_dir) / DLL_NAME
-        if not dll_path.is_file():
-            raise FileNotFoundError(f"No existe {DLL_NAME} en: {self.dll_dir}")
-
-        extra = [
-            self.dll_dir,
-            r"C:\Program Files (x86)\Common Files\Compac\Nucleo",
-            r"C:\Program Files\Common Files\Compac\Nucleo",
-        ]
-        for d in extra:
-            if os.path.isdir(d):
-                try:
-                    if hasattr(os, "add_dll_directory"):
-                        os.add_dll_directory(d)
-                    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH","")
-                except Exception:
-                    pass
-
-        self.dll = ctypes.WinDLL(str(dll_path))
-
-        # Base
-        self._bind('fSetNombrePAQ', c_int, [c_char_p])
-        self._bind('fAbreEmpresa', c_int, [c_char_p])
-        self._bind('fCierraEmpresa', None, [])
-        self._bind('fTerminaSDK', None, [])
-        self._bind('fError', None, [c_int, c_char_p, c_int])
-        self._bind('fInicioSesionSDK', c_int, [c_char_p, c_char_p], optional=True)
-
-        # Documento / Movimiento
-        self._bind('fAltaDocumento', c_int, [ctypes.POINTER(c_long), ctypes.c_void_p])
-        self._bind('fSetDatoDocumento', c_int, [c_char_p, c_char_p])
-        self._bind('fGuardaDocumento', c_int, [])
-
-        self._bind('fAltaMovimiento', c_int, [c_long, ctypes.POINTER(c_long), ctypes.c_void_p])
-        self._bind('fSetDatoMovimiento', c_int, [c_char_p, c_char_p])
-
-        # Catálogos — nombres más comunes (opcionales)
-        # Productos
-        self._bind('fPosPrimerProducto', c_int, [], optional=True)
-        self._bind('fPosSiguienteProducto', c_int, [], optional=True)
-        self._bind('fLeeDatoProducto', c_int, [c_char_p, c_char_p, c_int], optional=True)
-        # Clientes/Proveedores
-        self._bind('fPosPrimerCteProv', c_int, [], optional=True)
-        self._bind('fPosSiguienteCteProv', c_int, [], optional=True)
-        self._bind('fLeeDatoCteProv', c_int, [c_char_p, c_char_p, c_int], optional=True)
-        # Conceptos 
-        self._bind('fPosPrimerConceptoDocto', c_int, [], optional=True)
-        self._bind('fPosSiguienteConceptoDocto', c_int, [], optional=True)
-        self._bind('fLeeDatoConceptoDocto', c_int, [c_char_p, c_char_p, c_int], optional=True)
-        # Agentes
-        self._bind('fPosPrimerAgente', c_int, [], optional=True)
-        self._bind('fPosSiguienteAgente', c_int, [], optional=True)
-        self._bind('fLeeDatoAgente', c_int, [c_char_p, c_char_p, c_int], optional=True)
-        # Almacenes
-        self._bind('fPosPrimerAlmacen', c_int, [], optional=True)
-        self._bind('fPosSiguienteAlmacen', c_int, [], optional=True)
-        self._bind('fLeeDatoAlmacen', c_int, [c_char_p, c_char_p, c_int], optional=True)
-        # Monedas
-        self._bind('fPosPrimerMoneda', c_int, [], optional=True)
-        self._bind('fPosSiguienteMoneda', c_int, [], optional=True)
-        self._bind('fLeeDatoMoneda', c_int, [c_char_p, c_char_p, c_int], optional=True)
-        # Series 
-        self._bind('fPosPrimerSerie', c_int, [], optional=True)
-        self._bind('fPosSiguienteSerie', c_int, [], optional=True)
-        self._bind('fLeeDatoSerie', c_int, [c_char_p, c_char_p, c_int], optional=True)
-
-        self._check(self._call('fSetNombrePAQ', self.paq_name), 'Inicializando SDK (fSetNombrePAQ)')
-        self.loaded = True
-
-    def abre_empresa(self, path_empresa: str):
-        self._check(self._call('fAbreEmpresa', path_empresa.encode('latin-1')), f"Abrir empresa: {path_empresa}")
-
-    def cierra_empresa(self):
+    def error_text(self, rc: int) -> str:
+        buf = C.create_string_buffer(512)
         try:
-            if self._fns.get('fCierraEmpresa'): self._call('fCierraEmpresa')
-        except Exception: pass
+            self._dll.fError(int(rc), buf, C.sizeof(buf))
+            return buf.value.decode("latin-1", errors="ignore")
+        except Exception:
+            return f"rc={rc}"
 
-    def terminar(self):
+    def next_folio(self, cod_concepto: str, serie: str):
+        """
+        SDK puro y seguro:
+          1) fBuscaIdConcepto(cod) -> IdConcepto
+          2) fSiguienteFolio(IdConcepto, serie, &folio)
+        """
+        # 1) IdConcepto
+        pid = c_int(0)
+        rc  = int(self._dll.fBuscaIdConcepto(_ansi(cod_concepto), C.byref(pid)))
+        if rc != 0:
+            return rc, 0
+
+        # 2) SiguienteFolio
+        out = c_long(0)
+        rc  = int(self._dll.fSiguienteFolio(pid.value, _ansi(serie), C.byref(out)))
+        if rc != 0:
+            return rc, 0
+        return 0, int(out.value)
+
+    # --------- Limpieza ---------
+    def __del__(self):
         try:
-            if self._fns.get('fTerminaSDK'): self._call('fTerminaSDK')
-        except Exception: pass
-
-    def set_doc(self, nombre: str, valor):
-        val = '' if valor is None else str(valor)
-        self._check(self._call('fSetDatoDocumento', nombre.encode('latin-1'), val.encode('latin-1')), f"Set documento {nombre}")
-
-    def alta_documento(self) -> int:
-        doc_id = c_long(0)
-        self._check(self._call('fAltaDocumento', byref(doc_id), None), 'Alta documento')
-        return doc_id.value
-
-    def guarda_documento(self):
-        self._check(self._call('fGuardaDocumento'), 'Guardar documento')
-
-    def set_mov(self, nombre: str, valor):
-        val = '' if valor is None else str(valor)
-        self._check(self._call('fSetDatoMovimiento', nombre.encode('latin-1'), val.encode('latin-1')), f"Set movimiento {nombre}")
-
-    def alta_mov(self, id_doc: int) -> int:
-        mov_id = c_long(0)
-        self._check(self._call('fAltaMovimiento', id_doc, byref(mov_id), None), 'Alta movimiento')
-        return mov_id.value
-
-    def _listar_generico(self, pos_prim, pos_sig, lee_dato, campos, max_items=100000):
-        out = []
-        if not self._fns.get(pos_prim) or not self._fns.get(lee_dato):
-            return out
-        buf = create_string_buffer(512)
-        if self._fns[pos_prim]() != 0:
-            return out
-        n = 0
-        while n < max_items:
-            rec = {}
-            for campo_alias, campo_sdk in campos:
-                self._fns[lee_dato](campo_sdk.encode('latin-1'), buf, 512)
-                rec[campo_alias] = buf.value.decode('latin-1', 'ignore')
-            out.append(rec)
-            n += 1
-            if self._fns[pos_sig]() != 0:
-                break
-        return out
-
-    def listar_productos(self): 
-        return self._listar_generico('fPosPrimerProducto', 'fPosSiguienteProducto', 'fLeeDatoProducto',
-                                     [('codigo','cCodigoProducto'),('nombre','cNombreProducto')])
-
-    def listar_clientes(self): 
-        return self._listar_generico('fPosPrimerCteProv', 'fPosSiguienteCteProv', 'fLeeDatoCteProv',
-                                     [('codigo','cCodigoCliente'),('nombre','cRazonSocial')])
-
-    def listar_conceptos(self):
-        return self._listar_generico('fPosPrimerConceptoDocto','fPosSiguienteConceptoDocto','fLeeDatoConceptoDocto',
-                                     [('codigo','cCodigoConcepto'),('nombre','cNombreConcepto')])
-
-    def listar_agentes(self): 
-        return self._listar_generico('fPosPrimerAgente','fPosSiguienteAgente','fLeeDatoAgente',
-                                     [('codigo','cCodigoAgente'),('nombre','cNombreAgente')])
-
-    def listar_almacenes(self): 
-        return self._listar_generico('fPosPrimerAlmacen','fPosSiguienteAlmacen','fLeeDatoAlmacen',
-                                     [('codigo','cCodigoAlmacen'),('nombre','cNombreAlmacen')])
-
-    def listar_monedas(self): 
-        return self._listar_generico('fPosPrimerMoneda','fPosSiguienteMoneda','fLeeDatoMoneda',
-                                     [('codigo','cIdMoneda'),('nombre','cNombreMoneda')])
-
-    def listar_series(self):
-        return self._listar_generico('fPosPrimerSerie','fPosSiguienteSerie','fLeeDatoSerie',
-                                     [('codigo','cSerie'),('nombre','cNombreSerie')])
+            self._dll.fCierraEmpresa()
+        except Exception:
+            pass
+        try:
+            self._dll.fTerminaSesionSDK()
+        except Exception:
+            pass

@@ -1,175 +1,158 @@
 # features/catalogs.py
 # -*- coding: utf-8 -*-
-import ctypes
+from __future__ import annotations
+from typing import Iterable, List, Tuple, Any
 
-def _bind_any(sdk, *names):
-    for n in names:
-        fn = getattr(sdk.dll, n, None)
-        if fn: return fn
-    raise AttributeError(names[0])
+def _first_callable(obj, names: Iterable[str]):
+    """
+    Devuelve la primera función disponible en obj, obj.dll o obj.catalogs
+    con alguno de los nombres candidatos.
+    """
+    for name in names:
+        fn = getattr(obj, name, None)
+        if callable(fn):
+            return fn
+        dll = getattr(obj, "dll", None)
+        if dll:
+            fn = getattr(dll, name, None)
+            if callable(fn):
+                return fn
+        cats = getattr(obj, "catalogs", None)
+        if cats:
+            fn = getattr(cats, name, None)
+            if callable(fn):
+                return fn
+    return None
 
-def _read_field(fn_read, name: str, size: int = 512) -> str:
-    buf = ctypes.create_string_buffer(size)
+def _coerce_to_pairs(
+    items: Any,
+    code_keys=(
+        "codigo","code","id","clave","cCodigo","cCodigoProducto",
+        "cCodAlmacen","cCodAgente","cCodConcepto","cCodCteProv",
+        "cIdMoneda","cSerie","cCodigoCliente"
+    ),
+    name_keys=(
+        "nombre","name","descripcion","desc","cNombre",
+        "cDescripcion","cDenominacion","denominacion"
+    ),
+) -> List[Tuple[str,str]]:
+    """Normaliza tuplas/dicts/strings a lista de pares [(codigo, nombre)]."""
+    out: List[Tuple[str,str]] = []
+    if items is None:
+        return out
     try:
-        fn_read(name.encode("latin-1"), buf, size)
-        return buf.value.decode("latin-1", "ignore").strip()
+        iterator = list(items)
     except Exception:
-        return ""
+        return out
 
-def _enum_generic_any(sdk, first_names, next_names, read_names,
-                      field_nombre: str, field_codigo: str):
-    res = []
+    for it in iterator:
+        if it is None:
+            continue
+        # (codigo, nombre)
+        if isinstance(it, (tuple, list)):
+            if len(it) >= 2:
+                c = str(it[0]).strip()
+                n = str(it[1]).strip()
+                if c:
+                    out.append((c, n or c))
+                continue
+            elif len(it) == 1:
+                s = str(it[0]).strip()
+                if s:
+                    out.append((s, s))
+                continue
+        # dict estilo {"codigo": "...", "nombre": "..."}
+        if isinstance(it, dict):
+            c = n = None
+            for k in code_keys:
+                if k in it and it[k] is not None:
+                    c = str(it[k]).strip(); break
+            for k in name_keys:
+                if k in it and it[k] is not None:
+                    n = str(it[k]).strip(); break
+            if c:
+                out.append((c, n or c))
+            continue
+        # string suelto -> (s, s)
+        s = str(it).strip()
+        if s:
+            out.append((s, s))
+
+    # deduplicar por código
+    seen = set(); uniq: List[Tuple[str,str]] = []
+    for c, n in out:
+        if c not in seen:
+            uniq.append((c, n)); seen.add(c)
+    return uniq
+
+def _enum_generic(sdk, fn_candidates: Iterable[str]) -> List[Tuple[str,str]]:
+    """
+    Llama a la primera función disponible (con varios alias) en el wrapper,
+    en sdk.dll o en sdk.catalogs; normaliza a pares.
+    """
+    fn = _first_callable(sdk, fn_candidates)
+    if not fn:
+        return []
     try:
-        f_first = _bind_any(sdk, *first_names)
-        f_next  = _bind_any(sdk, *next_names)
-        f_read  = _bind_any(sdk, *read_names)
-    except AttributeError:
-        return res
-    f_first.restype = f_next.restype = ctypes.c_int
-    f_read.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
-    f_read.restype  = ctypes.c_int
-    if f_first() != 0:
-        return res
-    while True:
-        codigo = _read_field(f_read, field_codigo)
-        nombre = _read_field(f_read, field_nombre)
-        if codigo: res.append({"codigo": codigo, "nombre": nombre})
-        if f_next()!=0: break
-    return res
-
-def _busca_y_lee(sdk, busca_names, lee_names, codigo_name: str,
-                 field_codigo: str, field_nombre: str):
-    try:
-        f_busca = _bind_any(sdk, *busca_names)
-        f_lee   = _bind_any(sdk, *lee_names)
-    except AttributeError:
-        return None
-    f_busca.argtypes = [ctypes.c_char_p]; f_busca.restype  = ctypes.c_int
-    f_lee.argtypes   = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
-    f_lee.restype    = ctypes.c_int
-
-    def ok(code): return code==0
-    def busca(code): return ok(f_busca(code.encode("latin-1")))
-    def lee():
-        return {"codigo": _read_field(f_lee, field_codigo),
-                "nombre": _read_field(f_lee, field_nombre)}
-    def find(code):
-        if not code: return None
-        if busca(code):
-            out=lee()
-            if not out.get("codigo"): out["codigo"]=code
-            return out
-        return None
-    return lambda code: find(code)
-
-class CatalogManager:
-    def __init__(self, sdk):
-        self.sdk = sdk
-        self.conceptos=[]; self.clientes=[]; self.productos=[]
-        self.almacenes=[]; self.agentes=[]; self.monedas=[]; self.series=[]; self.proyectos=[]
-        self.find_concepto=self.find_cliente=self.find_producto=None
-        self.find_almacen=self.find_agente=self.find_moneda=self.find_serie=self.find_proyecto=None
-
-    def load_all(self, logger=print):
-        self.conceptos = _enum_generic_any(self.sdk,
-            ("fPosPrimerConcepto","fPosPrimerDoctoConcepto","fPosPrimerDocto"),
-            ("fPosSiguienteConcepto","fPosSiguienteDoctoConcepto","fPosSiguienteDocto"),
-            ("fLeeDatoConcepto","fLeeDatoDoctoConcepto","fLeeDatoDocto"),
-            "cNombreConcepto", "cCodConcepto")
-
-        self.clientes  = _enum_generic_any(self.sdk,
-            ("fPosPrimerCteProv","fPosPrimerCliente"),
-            ("fPosSiguienteCteProv","fPosSiguienteCliente"),
-            ("fLeeDatoCteProv","fLeeDatoCliente"),
-            "cRazonSocial","cCodigo")
-
-        self.productos = _enum_generic_any(self.sdk,
-            ("fPosPrimerProducto",),
-            ("fPosSiguienteProducto",),
-            ("fLeeDatoProducto",),
-            "cNombreProducto","cCodigoProducto")
-
-        self.almacenes = _enum_generic_any(self.sdk,
-            ("fPosPrimerAlmacen",),
-            ("fPosSiguienteAlmacen",),
-            ("fLeeDatoAlmacen",),
-            "cNombreAlmacen","cCodigoAlmacen")
-
-        self.agentes   = _enum_generic_any(self.sdk,
-            ("fPosPrimerAgente",),
-            ("fPosSiguienteAgente",),
-            ("fLeeDatoAgente",),
-            "cNombreAgente","cCodigoAgente")
-
-        self.monedas   = _enum_generic_any(self.sdk,
-            ("fPosPrimerMoneda",),
-            ("fPosSiguienteMoneda",),
-            ("fLeeDatoMoneda",),
-            "cNombreMoneda","cIdMoneda")
-
-        self.series    = _enum_generic_any(self.sdk,
-            ("fPosPrimerSerie","fPosPrimerFolio"),
-            ("fPosSiguienteSerie","fPosSiguienteFolio"),
-            ("fLeeDatoSerie","fLeeDatoFolio"),
-            "cNombreSerie","cCodigoSerie")
-
-        self.proyectos = _enum_generic_any(self.sdk,
-            ("fPosPrimerProyecto",),
-            ("fPosSiguienteProyecto",),
-            ("fLeeDatoProyecto",),
-            "cNombreProyecto","cCodigoProyecto")
-
-        logger(f"Conceptos: {len(self.conceptos)} | Clientes: {len(self.clientes)} | Productos: {len(self.productos)}")
-        logger(f"Almacenes: {len(self.almacenes)} | Agentes: {len(self.agentes)} | Monedas: {len(self.monedas)}")
-        logger(f"Series: {len(self.series)} | Proyectos: {len(self.proyectos)}")
-
-        # buscadores directos por código (si no hay lista)
-        self.find_concepto = _busca_y_lee(self.sdk,
-            ("fBuscaConcepto","fBuscaDoctoConcepto","fBuscaDocto","fBuscaDocumentoConcepto","fBuscaConceptoDocto"),
-            ("fLeeDatoConcepto","fLeeDatoDoctoConcepto","fLeeDatoDocto"),
-            "cCodConcepto", "cCodConcepto", "cNombreConcepto")
-
-        self.find_cliente = _busca_y_lee(self.sdk,
-            ("fBuscaCteProv","fBuscaCliente","fBuscaClientePorCodigo","fBuscaCtePorCodigo"),
-            ("fLeeDatoCteProv","fLeeDatoCliente"),
-            "cCodigo", "cCodigo", "cRazonSocial")
-
-        self.find_producto = _busca_y_lee(self.sdk, ("fBuscaProducto",), ("fLeeDatoProducto",),
-                                          "cCodigoProducto","cCodigoProducto","cNombreProducto")
-        self.find_almacen  = _busca_y_lee(self.sdk, ("fBuscaAlmacen",), ("fLeeDatoAlmacen",),
-                                          "cCodigoAlmacen","cCodigoAlmacen","cNombreAlmacen")
-        self.find_agente   = _busca_y_lee(self.sdk, ("fBuscaAgente",), ("fLeeDatoAgente",),
-                                          "cCodigoAgente","cCodigoAgente","cNombreAgente")
-        self.find_moneda   = _busca_y_lee(self.sdk, ("fBuscaMoneda",), ("fLeeDatoMoneda",),
-                                          "cIdMoneda","cIdMoneda","cNombreMoneda")
-        self.find_serie    = _busca_y_lee(self.sdk, ("fBuscaSerie","fBuscaFolio"), ("fLeeDatoSerie","fLeeDatoFolio"),
-                                          "cCodigoSerie","cCodigoSerie","cNombreSerie")
-        self.find_proyecto = _busca_y_lee(self.sdk, ("fBuscaProyecto",), ("fLeeDatoProyecto",),
-                                          "cCodigoProyecto","cCodigoProyecto","cNombreProyecto")
-
-    def get_dict(self):
-        return {
-            "concepto": self.conceptos,
-            "cliente": self.clientes,
-            "producto": self.productos,
-            "almacen": self.almacenes,
-            "agente": self.agentes,
-            "moneda": self.monedas,
-            "serie": self.series,
-            "proyecto": self.proyectos,
-        }
-
-def get_next_folio(sdk, cod_concepto: str, serie: str) -> str:
-    try:
-        fn = getattr(sdk.dll, "fSiguienteFolio")
-    except AttributeError:
-        return ""
-    fn.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
-    fn.restype  = ctypes.c_int
-    buf = ctypes.create_string_buffer(32)
-    try:
-        if fn(cod_concepto.encode("latin-1"), (serie or "").encode("latin-1"), buf, 32)==0:
-            return buf.value.decode("latin-1","ignore").strip()
+        return _coerce_to_pairs(fn())
     except Exception:
-        pass
-    return ""
+        try:
+            # algunos wrappers piden sdk explícito
+            return _coerce_to_pairs(fn(sdk))
+        except Exception:
+            return []
+
+def conceptos(sdk) -> List[Tuple[str, str]]:
+    return _enum_generic(sdk, (
+        "conceptos","list_conceptos","enum_conceptos",
+        "cat_conceptos","get_conceptos","obtener_conceptos"
+    ))
+
+def clientes(sdk) -> List[Tuple[str, str]]:
+    return _enum_generic(sdk, (
+        "clientes","list_clientes","enum_clientes",
+        "cat_clientes","get_clientes","obtener_clientes"
+    ))
+
+def productos(sdk) -> List[Tuple[str, str]]:
+    return _enum_generic(sdk, (
+        "productos","list_productos","enum_productos",
+        "cat_productos","get_productos","obtener_productos"
+    ))
+
+def almacenes(sdk) -> List[Tuple[str, str]]:
+    return _enum_generic(sdk, (
+        "almacenes","list_almacenes","enum_almacenes",
+        "cat_almacenes","get_almacenes","obtener_almacenes"
+    ))
+
+def agentes(sdk) -> List[Tuple[str, str]]:
+    return _enum_generic(sdk, (
+        "agentes","list_agentes","enum_agentes",
+        "cat_agentes","get_agentes","obtener_agentes"
+    ))
+
+def monedas(sdk) -> List[Tuple[str, str]]:
+    pairs = _enum_generic(sdk, (
+        "monedas","list_monedas","enum_monedas",
+        "cat_monedas","get_monedas","obtener_monedas"
+    ))
+    # fallback seguro: PMX y USD
+    if not pairs:
+        pairs = [("1","Peso Mexicano"), ("2","Dólar Americano")]
+    return pairs
+
+def series(sdk) -> List[Tuple[str, str]]:
+    pairs = _enum_generic(sdk, (
+        "series","list_series","enum_series",
+        "cat_series","get_series","obtener_series"
+    ))
+    # fallback seguro: "1"
+    if not pairs:
+        pairs = [("1","1")]
+    return pairs
+
+__all__ = [
+    "conceptos","clientes","productos","almacenes",
+    "agentes","monedas","series"
+]
